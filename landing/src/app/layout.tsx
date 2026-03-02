@@ -1,6 +1,7 @@
 import { GeistPixelSquare } from "geist/font/pixel";
 import { Geist, Geist_Mono } from "next/font/google";
 import "@/styles/globals.css";
+import { Analytics } from "@vercel/analytics/next";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { CommandMenuProvider } from "@/components/command-menu";
@@ -88,6 +89,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             </CommandMenuProvider>
           </EarlyDevProvider>
         </Providers>
+        <Analytics />
       </body>
     </html>
   );
