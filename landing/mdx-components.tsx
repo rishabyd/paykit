@@ -7,6 +7,8 @@ import type { MDXComponents } from "mdx/types";
 
 export function useMDXComponents(components?: MDXComponents): MDXComponents {
   return {
+    ...defaultMdxComponents,
+    ...components,
     Callout,
     Card,
     Cards,
@@ -14,7 +16,5 @@ export function useMDXComponents(components?: MDXComponents): MDXComponents {
     Steps,
     Tab,
     Tabs,
-    ...defaultMdxComponents,
-    ...components,
   };
 }

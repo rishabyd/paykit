@@ -41,6 +41,7 @@ export default async function Page({ params }: DocsPageProps) {
       <DocsBody>
         <MDXContent
           components={{
+            ...defaultMdxComponents,
             Callout,
             Card,
             Cards,
@@ -48,7 +49,6 @@ export default async function Page({ params }: DocsPageProps) {
             Steps,
             Tab,
             Tabs,
-            ...defaultMdxComponents,
           }}
         />
       </DocsBody>
