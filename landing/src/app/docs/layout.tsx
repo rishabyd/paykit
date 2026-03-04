@@ -3,6 +3,8 @@ import {
   PlayIcon,
   SquaresPlusIcon,
 } from "@heroicons/react/24/solid";
+import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type * as PageTree from "fumadocs-core/page-tree";
 import { DocsLayout } from "fumadocs-ui/layouts/docs";
 import type { ReactElement, ReactNode } from "react";
@@ -10,13 +12,28 @@ import { LogoLockup } from "@/components/icons/logo";
 import { source } from "@/lib/source";
 
 const categoryIcons = {
-  "get started": <PlayIcon className="size-3! shrink-0" />,
-  integrations: <SquaresPlusIcon className="size-3! shrink-0" />,
-  project: <FolderIcon className="size-3! shrink-0" />,
+  "get started": <PlayIcon className="docs-category-icon size-3! shrink-0" />,
+  integrations: (
+    <SquaresPlusIcon className="docs-category-icon size-3! shrink-0" />
+  ),
+  project: <FolderIcon className="docs-category-icon size-3! shrink-0" />,
 } as const;
 
 function getCategoryIcon(name: string): ReactElement | undefined {
   return categoryIcons[name.toLowerCase() as keyof typeof categoryIcons];
+}
+
+function CategoryFolderIcon({ icon }: { icon?: ReactElement }) {
+  return (
+    <>
+      {icon}
+      <HugeiconsIcon
+        icon={ArrowDown01Icon}
+        strokeWidth={2}
+        className="docs-category-chevron pointer-events-none absolute right-5 top-1/2 size-4 -translate-y-1/2 transition-transform duration-150"
+      />
+    </>
+  );
 }
 
 function groupCategories(nodes: PageTree.Node[]): PageTree.Node[] {
@@ -35,13 +52,11 @@ function groupCategories(nodes: PageTree.Node[]): PageTree.Node[] {
 
       const icon =
         typeof node.name === "string" ? getCategoryIcon(node.name) : undefined;
-      if (icon) {
-        (
-          currentCategory as PageTree.Folder & {
-            icon?: ReactElement;
-          }
-        ).icon = icon;
-      }
+      (
+        currentCategory as PageTree.Folder & {
+          icon?: ReactElement;
+        }
+      ).icon = <CategoryFolderIcon icon={icon} />;
 
       grouped.push(currentCategory);
       continue;

@@ -43,16 +43,16 @@
 }
 
 @keyframes logo-marquee {
-	0% {
-		transform: translateX(0);
-	}
-	100% {
-		transform: translateX(-50%);
-	}
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
 }
 
 .animate-logo-marquee {
-	animation: logo-marquee 30s linear infinite;
+  animation: logo-marquee 30s linear infinite;
 }
 
 :root {
@@ -377,6 +377,21 @@ html:not([data-anchor-scrolling]) {
   + [data-state]
   > :is(button, a).flex.flex-row.items-center.gap-2 {
   border-top: 0;
+}
+
+/* Docs sidebar categories: replace default folder chevron with Hugeicons */
+#nd-sidebar
+  button[aria-expanded]
+  > svg:not(.docs-category-chevron):not(.docs-category-icon),
+#nd-sidebar-mobile
+  button[aria-expanded]
+  > svg:not(.docs-category-chevron):not(.docs-category-icon) {
+  display: none !important;
+}
+
+#nd-sidebar button[aria-expanded="true"] .docs-category-chevron,
+#nd-sidebar-mobile button[aria-expanded="true"] .docs-category-chevron {
+  transform: rotate(180deg);
 }
 
 /* Sidebar search row: full width like category rows */
