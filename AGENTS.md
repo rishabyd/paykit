@@ -49,6 +49,7 @@ Enforced by oxlint, oxfmt, and TypeScript config. Follow strictly.
 - Avoid classes (use functions/objects) and enums (use `as const` or unions)
 - No `Buffer` in library code — use `Uint8Array`. `Buffer` allowed in tests
 - 2-space indent, oxfmt handles formatting — do not add Prettier or Biome
+- while using tailwing, prefer sizes in tw units like `-5` rather than in pixels via `-[20px]`
 
 ## Landing Page Conventions
 
