@@ -13,6 +13,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type * as PageTree from "fumadocs-core/page-tree";
 import { DocsLayout } from "fumadocs-ui/layouts/docs";
 import type { ReactElement, ReactNode } from "react";
+import { SidebarCategoryAccordion } from "@/components/docs/sidebar-category-accordion";
 import { LogoLockup } from "@/components/icons/logo";
 import { GITHUB_URL } from "@/lib/consts";
 import { source } from "@/lib/source";
@@ -286,6 +287,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         url: "/",
       }}
     >
+      <SidebarCategoryAccordion />
       {children}
     </DocsLayout>
   );
