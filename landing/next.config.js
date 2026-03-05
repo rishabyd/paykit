@@ -11,6 +11,9 @@ const repoRoot = join(currentDir, "..");
 
 /** @type {import("next").NextConfig} */
 const config = {
+  devIndicators: {
+    position: "bottom-right",
+  },
   outputFileTracingRoot: repoRoot,
   turbopack: {
     root: repoRoot,
