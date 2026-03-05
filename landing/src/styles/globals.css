@@ -9,6 +9,25 @@
 
 @custom-variant dark (&:is(.dark *));
 
+.hero-dots {
+  mask-image: radial-gradient(ellipse 70% 8% at 50% 160px, black 0%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 8% at 50% 160px, black 0%, transparent 100%);
+}
+
+@media (min-width: 768px) {
+  .hero-dots {
+    mask-image: radial-gradient(ellipse 70% 10% at 50% 220px, black 0%, transparent 100%);
+    -webkit-mask-image: radial-gradient(ellipse 70% 10% at 50% 220px, black 0%, transparent 100%);
+  }
+}
+
+@media (min-width: 1024px) {
+  .hero-dots {
+    mask-image: radial-gradient(ellipse 70% 12% at 50% 250px, black 0%, transparent 100%);
+    -webkit-mask-image: radial-gradient(ellipse 70% 12% at 50% 250px, black 0%, transparent 100%);
+  }
+}
+
 @keyframes icon-bounce {
   0% {
     transform: translateY(0);
