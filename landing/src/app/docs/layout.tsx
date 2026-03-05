@@ -1,10 +1,8 @@
-import { BookOpenIcon } from "@heroicons/react/20/solid";
-import { ArrowDownOnSquareIcon, BanknotesIcon } from "@heroicons/react/24/outline";
-import { FolderIcon, PlayIcon, SquaresPlusIcon } from "@heroicons/react/24/solid";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type * as PageTree from "fumadocs-core/page-tree";
 import { DocsLayout } from "fumadocs-ui/layouts/docs";
+import { BookOpen, Coins, Download, Folder, Play, SquareStack } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 
 import { SidebarCategoryAccordion } from "@/components/docs/sidebar-category-accordion";
@@ -13,15 +11,15 @@ import { GITHUB_URL } from "@/lib/consts";
 import { source } from "@/lib/source";
 
 const categoryIcons = {
-  "get started": <PlayIcon className="docs-category-icon size-3! shrink-0" />,
-  integrations: <SquaresPlusIcon className="docs-category-icon size-3! shrink-0" />,
-  project: <FolderIcon className="docs-category-icon size-3! shrink-0" />,
+  intro: <Play className="docs-category-icon size-3! shrink-0" />,
+  integrations: <SquareStack className="docs-category-icon size-3! shrink-0" />,
+  project: <Folder className="docs-category-icon size-3! shrink-0" />,
 } as const;
 
 const pageIcons = {
-  introduction: <BookOpenIcon className="docs-category-icon size-3! shrink-0" />,
-  installation: <ArrowDownOnSquareIcon className="docs-category-icon size-3! shrink-0" />,
-  "basic usage": <BanknotesIcon className="docs-category-icon size-3! shrink-0" />,
+  introduction: <BookOpen className="docs-category-icon size-3! shrink-0" />,
+  installation: <Download className="docs-category-icon size-3! shrink-0" />,
+  "basic usage": <Coins className="docs-category-icon size-3! shrink-0" />,
 } as const;
 
 const providerPageIcons = {
