@@ -9,8 +9,8 @@ Core lib:
 
 Other:
 
-- add creem in docs
 - add [soon] badges in docs on providers
+- make search icon smaller
 - design proper OG image in Figma
 - fix multiple H1 tags on landing
 - separate /docs styles to docs.css
