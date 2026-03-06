@@ -4,12 +4,10 @@ export const LogoLockup = ({ className }: { className?: string }) => {
   return (
     <div className="flex flex-row items-center">
       <svg
-        width="513"
-        height="577"
         viewBox="0 0 513 577"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        className={cn("h-5 w-fit fill-foreground", className)}
+        className={cn("block h-5 w-auto shrink-0 fill-foreground", className)}
       >
         <path
           d="M117.86 237.013C117.861 236.244 118.694 235.763 119.36 236.148L231.344 300.798C234.438 302.584 236.344 305.885 236.344 309.458L236.348 576.588L117.86 508.178V501.828C117.86 498.85 117.859 495.26 117.859 491.214C117.859 479.26 117.859 463.322 117.859 447.385C117.86 415.587 117.86 383.787 117.86 383.632V237.013Z"
