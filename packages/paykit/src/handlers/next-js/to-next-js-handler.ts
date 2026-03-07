@@ -1,7 +1,9 @@
 import type { PayKitInstance } from "../../types/instance";
 
 interface NextRouteContext {
-  params?: { providerId?: string } | Promise<{ providerId?: string }>;
+  params?:
+    | Record<string, string | string[] | undefined>
+    | Promise<Record<string, string | string[] | undefined>>;
 }
 
 function headersToRecord(headers: Headers): Record<string, string> {
@@ -18,8 +20,33 @@ async function extractProviderId(
 ): Promise<string | null> {
   if (context?.params) {
     const params = await context.params;
-    if (params.providerId) {
-      return params.providerId;
+    const providerId = params.providerId;
+    if (typeof providerId === "string") {
+      return providerId;
+    }
+
+    if (Array.isArray(providerId) && providerId.length > 0) {
+      return providerId[providerId.length - 1] ?? null;
+    }
+
+    const slug = params.slug;
+    if (typeof slug === "string") {
+      return slug;
+    }
+
+    if (Array.isArray(slug) && slug.length > 0) {
+      return slug[slug.length - 1] ?? null;
+    }
+
+    const firstParam = Object.values(params).find(
+      (value): value is string | string[] => typeof value === "string" || Array.isArray(value),
+    );
+    if (typeof firstParam === "string") {
+      return firstParam;
+    }
+
+    if (Array.isArray(firstParam) && firstParam.length > 0) {
+      return firstParam[firstParam.length - 1] ?? null;
     }
   }
 
@@ -31,16 +58,7 @@ async function extractProviderId(
   return segments[segments.length - 1] ?? null;
 }
 
-async function parseBody(request: Request): Promise<unknown> {
-  const contentType = request.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    try {
-      return await request.json();
-    } catch {
-      return null;
-    }
-  }
-
+async function parseBody(request: Request): Promise<string> {
   return request.text();
 }
 

@@ -7,7 +7,6 @@ export async function syncPostgresSchema(db: NodePgDatabase<typeof schema>): Pro
   await db.execute(sql`
     create table if not exists paykit_customer (
       id text primary key,
-      reference_id text not null unique,
       email text,
       name text,
       metadata jsonb,
@@ -64,4 +63,13 @@ export async function syncPostgresSchema(db: NodePgDatabase<typeof schema>): Pro
     create index if not exists paykit_charge_customer_provider_idx
     on paykit_charge (customer_id, provider_id)
   `);
+
+  try {
+    await db.execute(sql`
+      alter table paykit_customer
+      alter column reference_id drop not null
+    `);
+  } catch {
+    // Ignore fresh schemas without the legacy column and parsers that do not support this DDL.
+  }
 }

@@ -5,14 +5,14 @@ import { PayKitError } from "../core/errors";
 import { generateId } from "../core/utils";
 import type { PayKitDatabase } from "../database/postgres/database";
 import { customer, providerCustomer } from "../database/postgres/schema";
-import type { Customer, ProviderCustomer } from "../types/models";
+import type { Customer, InternalProviderCustomer } from "../types/models";
 
 function anonymizedEmail(id: string): string {
   return `deleted+${id}@paykit.local`;
 }
 
 export interface SyncCustomerInput {
-  referenceId: string;
+  id: string;
   email?: string;
   name?: string;
   metadata?: Record<string, string>;
@@ -24,7 +24,7 @@ export async function syncCustomer(
 ): Promise<Customer> {
   const now = new Date();
   const existing = await database.query.customer.findFirst({
-    where: eq(customer.referenceId, input.referenceId),
+    where: eq(customer.id, input.id),
   });
 
   if (existing) {
@@ -50,8 +50,7 @@ export async function syncCustomer(
   const rows = await database
     .insert(customer)
     .values({
-      id: generateId("cust"),
-      referenceId: input.referenceId,
+      id: input.id,
       email: input.email ?? null,
       name: input.name ?? null,
       metadata: input.metadata ?? null,
@@ -68,17 +67,6 @@ export async function syncCustomer(
   return row;
 }
 
-export async function getCustomerByReferenceId(
-  database: PayKitDatabase,
-  referenceId: string,
-): Promise<Customer | null> {
-  return (
-    (await database.query.customer.findFirst({
-      where: and(eq(customer.referenceId, referenceId), isNull(customer.deletedAt)),
-    })) ?? null
-  );
-}
-
 export async function getCustomerById(
   database: PayKitDatabase,
   customerId: string,
@@ -93,7 +81,7 @@ export async function getCustomerById(
 export async function getProviderCustomer(
   database: PayKitDatabase,
   input: { customerId: string; providerId: string },
-): Promise<ProviderCustomer | null> {
+): Promise<InternalProviderCustomer | null> {
   return (
     (await database.query.providerCustomer.findFirst({
       where: and(
@@ -104,10 +92,24 @@ export async function getProviderCustomer(
   );
 }
 
+export async function getProviderCustomerByProviderCustomerId(
+  database: PayKitDatabase,
+  input: { providerCustomerId: string; providerId: string },
+): Promise<InternalProviderCustomer | null> {
+  return (
+    (await database.query.providerCustomer.findFirst({
+      where: and(
+        eq(providerCustomer.providerId, input.providerId),
+        eq(providerCustomer.providerCustomerId, input.providerCustomerId),
+      ),
+    })) ?? null
+  );
+}
+
 export async function upsertProviderCustomer<TProviderId extends string>(
   ctx: PayKitContext<TProviderId>,
   input: { customerId: string; providerId: TProviderId },
-): Promise<ProviderCustomer> {
+): Promise<InternalProviderCustomer> {
   return ctx.database.transaction(async (tx) => {
     const customer = await getCustomerById(tx, input.customerId);
     if (!customer) {
@@ -125,7 +127,7 @@ export async function upsertProviderCustomer<TProviderId extends string>(
     }
 
     const { providerCustomerId } = await provider.upsertCustomer({
-      referenceId: customer.referenceId,
+      id: customer.id,
       email: customer.email ?? undefined,
       name: customer.name ?? undefined,
       metadata: customer.metadata ?? undefined,
@@ -150,12 +152,12 @@ export async function upsertProviderCustomer<TProviderId extends string>(
   });
 }
 
-export async function deleteCustomerByReferenceId(
+export async function deleteCustomerById(
   database: PayKitDatabase,
-  referenceId: string,
+  customerId: string,
 ): Promise<void> {
   const existingCustomer = await database.query.customer.findFirst({
-    where: and(eq(customer.referenceId, referenceId), isNull(customer.deletedAt)),
+    where: and(eq(customer.id, customerId), isNull(customer.deletedAt)),
   });
 
   if (!existingCustomer) {

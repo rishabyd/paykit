@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
 
 import type { PayKitProvider } from "../providers/provider";
-import type { PayKitEventHandler } from "./events";
+import type { PayKitEventHandlers } from "./events";
 
 export type ProviderId<TProviders extends readonly PayKitProvider[]> = TProviders[number]["id"];
 
@@ -16,5 +16,5 @@ export interface PayKitOptions<
     warn: (message: string, ...args: unknown[]) => void;
     error: (message: string, ...args: unknown[]) => void;
   };
-  on?: Record<string, PayKitEventHandler>;
+  on?: PayKitEventHandlers;
 }

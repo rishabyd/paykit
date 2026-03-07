@@ -1,48 +1,24 @@
-import { createPayKit, defineProvider } from "paykitjs";
+import { stripe } from "@paykitjs/stripe";
+import { createPayKit } from "paykitjs";
 import { Pool } from "pg";
 
 import { env } from "@/env";
 
-const mockProvider = defineProvider({
-  id: "mock",
-
-  async upsertCustomer(data) {
-    return {
-      providerCustomerId: `mock_cust_${data.referenceId}`,
-    };
-  },
-
-  async checkout(data) {
-    const url = new URL("https://example.com/checkout/mock");
-    url.searchParams.set("customer", data.providerCustomerId);
-    url.searchParams.set("amount", String(data.amount));
-    url.searchParams.set("description", data.description);
-
-    return { url: url.toString() };
-  },
-
-  async attachPaymentMethod(data) {
-    return { url: data.returnURL };
-  },
-
-  async detachPaymentMethod() {},
-
-  async handleWebhook() {
-    return {
-      name: "webhook.received",
-      payload: {
-        providerId: "mock",
-      },
-    };
-  },
-});
-
-const providers = [mockProvider] as const;
-
 function createPayKitInstance(pool: Pool) {
   return createPayKit({
     database: pool,
-    providers,
+    on: {
+      "checkout.completed": ({ payload }) => {
+        console.info("[paykit] checkout.completed", payload);
+      },
+    },
+    providers: [
+      stripe({
+        currency: "usd",
+        secretKey: env.STRIPE_SECRET_KEY,
+        webhookSecret: env.STRIPE_WEBHOOK_SECRET,
+      }),
+    ],
   });
 }
 

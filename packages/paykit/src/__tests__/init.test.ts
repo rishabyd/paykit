@@ -96,6 +96,16 @@ function createTestPool(): Pool {
   return pool as unknown as Pool;
 }
 
+async function getStoredCustomerId(pool: Pool, customerId: string): Promise<string> {
+  const result = await pool.query("select id from paykit_customer where id = $1", [customerId]);
+  const row = result.rows[0] as { id?: string } | undefined;
+  if (!row?.id) {
+    throw new Error(`Expected stored customer id for ${customerId}.`);
+  }
+
+  return row.id;
+}
+
 describe("paykit init", () => {
   it("should expose the MVP API shape", async () => {
     const paykit = createPayKit({
@@ -117,7 +127,7 @@ describe("paykit init", () => {
     expect(typeof paykit.handleWebhook).toBe("function");
     expect(typeof paykit.asCustomer).toBe("function");
 
-    const scoped = paykit.asCustomer({ referenceId: "user_1" });
+    const scoped = paykit.asCustomer({ id: "user_1" });
     expect(typeof scoped.checkout.create).toBe("function");
     expect(typeof scoped.paymentMethod.attach).toBe("function");
   });
@@ -171,18 +181,22 @@ describe("paykit init", () => {
     });
 
     const first = await paykit.customer.sync({
-      referenceId: "user_1",
+      id: "user_1",
       email: "one@example.com",
       name: "One",
     });
     const second = await paykit.customer.sync({
-      referenceId: "user_1",
+      id: "user_1",
       email: "two@example.com",
     });
 
-    expect(second.id).toBe(first.id);
+    expect(first.id).toBe("user_1");
+    expect(second.id).toBe("user_1");
     expect(second.email).toBe("two@example.com");
     expect(second.name).toBe("One");
+
+    const rows = await pool.query("select id from paykit_customer where id = $1", ["user_1"]);
+    expect(rows.rows).toHaveLength(1);
   });
 
   it("should lazily create and reuse provider accounts for provider actions", async () => {
@@ -196,8 +210,8 @@ describe("paykit init", () => {
       id: "mock",
 
       async upsertCustomer(data) {
-        calls.upsertCustomer.push(data.referenceId);
-        return { providerCustomerId: `provider_${data.referenceId}` };
+        calls.upsertCustomer.push(data.id);
+        return { providerCustomerId: `provider_${data.id}` };
       },
 
       async checkout(data) {
@@ -213,10 +227,7 @@ describe("paykit init", () => {
       async detachPaymentMethod() {},
 
       async handleWebhook() {
-        return {
-          name: "webhook.received" as const,
-          payload: { hasBody: true, webhookId: "evt_test" },
-        };
+        return [];
       },
     });
 
@@ -227,7 +238,7 @@ describe("paykit init", () => {
     });
 
     const customer = await paykit.customer.sync({
-      referenceId: "user_1",
+      id: "user_1",
       email: "user@example.com",
       name: "User One",
     });
@@ -260,7 +271,7 @@ describe("paykit init", () => {
     expect(calls.upsertCustomer).toEqual(["user_1"]);
     expect(calls.attachPaymentMethod).toEqual(["provider_user_1"]);
 
-    await paykit.customer.delete({ referenceId: "user_1" });
+    await paykit.customer.delete({ id: "user_1" });
     expect((await pool.query("select * from paykit_provider_customer")).rows).toHaveLength(1);
   });
 
@@ -272,13 +283,15 @@ describe("paykit init", () => {
     });
 
     await paykit.customer.sync({
-      referenceId: "user_1",
+      id: "user_1",
       email: "user@example.com",
       name: "User",
     });
 
-    const customer = await paykit.customer.get({ referenceId: "user_1" });
+    const customer = await paykit.customer.get({ id: "user_1" });
     expect(customer).toBeTruthy();
+
+    const storedCustomerId = await getStoredCustomerId(pool, "user_1");
 
     await pool.query(
       `
@@ -300,17 +313,17 @@ describe("paykit init", () => {
           ('pm_1', $1, 'mock', 'provider_pm_1', 'card', '1111', 1, 2030, true, null, now(), now()),
           ('pm_2', $1, 'mock', 'provider_pm_2', 'card', '2222', 2, 2031, false, null, now(), now())
       `,
-      [customer!.id],
+      [storedCustomerId],
     );
 
     await paykit.paymentMethod.setDefault({
-      customerId: customer!.id,
+      customerId: "user_1",
       providerId: "mock",
       paymentMethodId: "pm_2",
     });
 
     const paymentMethods = await paykit.paymentMethod.list({
-      customerId: customer!.id,
+      customerId: "user_1",
       providerId: "mock",
     });
 
@@ -329,5 +342,391 @@ describe("paykit init", () => {
     });
 
     await expect(paykit.$context).rejects.toThrow(/Failed query|db unavailable/);
+  });
+
+  it("should pass the raw request body string to providers through the next handler", async () => {
+    let receivedBody = "";
+    let receivedCustomerId = "";
+    let catchAllEventName = "";
+
+    const provider = defineProvider({
+      id: "stripe",
+
+      async upsertCustomer(data) {
+        return { providerCustomerId: `cus_${data.id}` };
+      },
+
+      async checkout() {
+        return { url: "https://example.com/checkout/mock" };
+      },
+
+      async attachPaymentMethod(data) {
+        return { url: data.returnURL };
+      },
+
+      async detachPaymentMethod() {},
+
+      async handleWebhook(data) {
+        receivedBody = data.body;
+        return [
+          {
+            name: "checkout.completed",
+            payload: {
+              checkoutSessionId: "cs_test_123",
+              paymentStatus: "paid",
+              providerCustomerId: "cus_user_1",
+              status: "complete",
+            },
+          },
+        ];
+      },
+    });
+
+    const database = createTestPool();
+    const paykit = createPayKit({
+      database,
+      providers: [provider],
+      on: {
+        "*": ({ event }) => {
+          catchAllEventName = event.name;
+        },
+        "checkout.completed": ({ payload }) => {
+          receivedCustomerId = payload.customer.id;
+        },
+      },
+    });
+
+    const customer = await paykit.customer.sync({
+      id: "user_1",
+    });
+
+    await paykit.checkout.create({
+      providerId: "stripe",
+      customerId: customer.id,
+      amount: 9900,
+      description: "Lifetime License",
+      successURL: "https://example.com/success",
+    });
+
+    const { POST } = toNextJsHandler(paykit);
+    const response = await POST(
+      new Request("https://example.com/api/pay/webhooks/stripe", {
+        body: JSON.stringify({ id: "evt_test" }),
+        headers: {
+          "content-type": "application/json",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(receivedBody).toBe('{"id":"evt_test"}');
+    expect(receivedCustomerId).toBe("user_1");
+    expect(catchAllEventName).toBe("checkout.completed");
+  });
+
+  it("should sync attached payment methods from webhooks and emit attached before checkout completion", async () => {
+    const receivedEvents: string[] = [];
+
+    const provider = defineProvider({
+      id: "stripe",
+
+      async upsertCustomer(data) {
+        return { providerCustomerId: `cus_${data.id}` };
+      },
+
+      async checkout() {
+        return { url: "https://example.com/checkout/mock" };
+      },
+
+      async attachPaymentMethod(data) {
+        return { url: data.returnURL };
+      },
+
+      async detachPaymentMethod() {},
+
+      async handleWebhook(data) {
+        const body = JSON.parse(data.body) as { id: string };
+        if (body.id === "evt_payment_1") {
+          return [
+            {
+              actions: [
+                {
+                  data: {
+                    paymentMethod: {
+                      expiryMonth: 1,
+                      expiryYear: 2030,
+                      last4: "1111",
+                      providerMethodId: "pm_provider_1",
+                      type: "card",
+                    },
+                    providerCustomerId: "cus_user_1",
+                  },
+                  type: "payment_method.upsert",
+                },
+              ],
+              name: "payment_method.attached",
+              payload: {
+                paymentMethod: {
+                  expiryMonth: 1,
+                  expiryYear: 2030,
+                  last4: "1111",
+                  providerMethodId: "pm_provider_1",
+                  type: "card",
+                },
+                providerCustomerId: "cus_user_1",
+              },
+            },
+            {
+              name: "checkout.completed",
+              payload: {
+                checkoutSessionId: "cs_test_123",
+                paymentStatus: "paid",
+                providerCustomerId: "cus_user_1",
+                status: "complete",
+              },
+            },
+          ];
+        }
+
+        return [
+          {
+            actions: [
+              {
+                data: {
+                  paymentMethod: {
+                    expiryMonth: 2,
+                    expiryYear: 2031,
+                    last4: "2222",
+                    providerMethodId: "pm_provider_2",
+                    type: "card",
+                  },
+                  providerCustomerId: "cus_user_1",
+                },
+                type: "payment_method.upsert",
+              },
+            ],
+            name: "payment_method.attached",
+            payload: {
+              paymentMethod: {
+                expiryMonth: 2,
+                expiryYear: 2031,
+                last4: "2222",
+                providerMethodId: "pm_provider_2",
+                type: "card",
+              },
+              providerCustomerId: "cus_user_1",
+            },
+          },
+        ];
+      },
+    });
+
+    const pool = createTestPool();
+    const paykit = createPayKit({
+      database: pool,
+      on: {
+        "checkout.completed": () => {
+          receivedEvents.push("checkout.completed");
+        },
+        "payment_method.attached": () => {
+          receivedEvents.push("payment_method.attached");
+        },
+      },
+      providers: [provider],
+    });
+
+    await paykit.customer.sync({
+      id: "user_1",
+    });
+    await paykit.checkout.create({
+      amount: 9900,
+      customerId: "user_1",
+      description: "Lifetime License",
+      providerId: "stripe",
+      successURL: "https://example.com/success",
+    });
+
+    await paykit.handleWebhook({
+      body: JSON.stringify({ id: "evt_payment_1" }),
+      headers: {},
+      providerId: "stripe",
+    });
+
+    let methods = await paykit.paymentMethod.list({
+      customerId: "user_1",
+      providerId: "stripe",
+    });
+    expect(receivedEvents).toEqual(["payment_method.attached", "checkout.completed"]);
+    expect(methods).toHaveLength(1);
+    expect(methods[0]?.providerMethodId).toBe("pm_provider_1");
+    expect(methods[0]?.isDefault).toBe(true);
+
+    await paykit.handleWebhook({
+      body: JSON.stringify({ id: "evt_payment_2" }),
+      headers: {},
+      providerId: "stripe",
+    });
+
+    methods = await paykit.paymentMethod.list({
+      customerId: "user_1",
+      providerId: "stripe",
+    });
+    expect(methods).toHaveLength(2);
+    expect(methods.find((method) => method.providerMethodId === "pm_provider_1")?.isDefault).toBe(
+      false,
+    );
+    expect(methods.find((method) => method.providerMethodId === "pm_provider_2")?.isDefault).toBe(
+      true,
+    );
+  });
+
+  it("should soft-delete detached payment methods and promote the newest remaining default", async () => {
+    let detachedPaymentMethodId = "";
+    let detachedPaymentMethodIsDefault = true;
+    let detachedPaymentMethodDeletedAt: Date | null = null;
+
+    const provider = defineProvider({
+      id: "stripe",
+
+      async upsertCustomer(data) {
+        return { providerCustomerId: `cus_${data.id}` };
+      },
+
+      async checkout() {
+        return { url: "https://example.com/checkout/mock" };
+      },
+
+      async attachPaymentMethod(data) {
+        return { url: data.returnURL };
+      },
+
+      async detachPaymentMethod() {},
+
+      async handleWebhook(data) {
+        const body = JSON.parse(data.body) as { id: string };
+        if (body.id === "evt_attach_1") {
+          return [
+            {
+              actions: [
+                {
+                  data: {
+                    paymentMethod: {
+                      providerMethodId: "pm_provider_1",
+                      type: "card",
+                    },
+                    providerCustomerId: "cus_user_1",
+                  },
+                  type: "payment_method.upsert",
+                },
+              ],
+              name: "payment_method.attached",
+              payload: {
+                paymentMethod: {
+                  providerMethodId: "pm_provider_1",
+                  type: "card",
+                },
+                providerCustomerId: "cus_user_1",
+              },
+            },
+          ];
+        }
+
+        if (body.id === "evt_attach_2") {
+          return [
+            {
+              actions: [
+                {
+                  data: {
+                    paymentMethod: {
+                      providerMethodId: "pm_provider_2",
+                      type: "card",
+                    },
+                    providerCustomerId: "cus_user_1",
+                  },
+                  type: "payment_method.upsert",
+                },
+              ],
+              name: "payment_method.attached",
+              payload: {
+                paymentMethod: {
+                  providerMethodId: "pm_provider_2",
+                  type: "card",
+                },
+                providerCustomerId: "cus_user_1",
+              },
+            },
+          ];
+        }
+
+        return [
+          {
+            actions: [
+              {
+                data: {
+                  providerMethodId: "pm_provider_2",
+                },
+                type: "payment_method.delete",
+              },
+            ],
+            name: "payment_method.detached",
+            payload: {
+              providerMethodId: "pm_provider_2",
+            },
+          },
+        ];
+      },
+    });
+
+    const paykit = createPayKit({
+      database: createTestPool(),
+      on: {
+        "payment_method.detached": ({ payload }) => {
+          detachedPaymentMethodDeletedAt = payload.paymentMethod.deletedAt;
+          detachedPaymentMethodId = payload.paymentMethod.providerMethodId;
+          detachedPaymentMethodIsDefault = payload.paymentMethod.isDefault;
+        },
+      },
+      providers: [provider],
+    });
+
+    await paykit.customer.sync({
+      id: "user_1",
+    });
+    await paykit.checkout.create({
+      amount: 9900,
+      customerId: "user_1",
+      description: "Lifetime License",
+      providerId: "stripe",
+      successURL: "https://example.com/success",
+    });
+
+    await paykit.handleWebhook({
+      body: JSON.stringify({ id: "evt_attach_1" }),
+      headers: {},
+      providerId: "stripe",
+    });
+    await paykit.handleWebhook({
+      body: JSON.stringify({ id: "evt_attach_2" }),
+      headers: {},
+      providerId: "stripe",
+    });
+    await paykit.handleWebhook({
+      body: JSON.stringify({ id: "evt_detach_2" }),
+      headers: {},
+      providerId: "stripe",
+    });
+
+    const methods = await paykit.paymentMethod.list({
+      customerId: "user_1",
+      providerId: "stripe",
+    });
+
+    expect(detachedPaymentMethodId).toBe("pm_provider_2");
+    expect(detachedPaymentMethodIsDefault).toBe(false);
+    expect(detachedPaymentMethodDeletedAt).toBeInstanceOf(Date);
+    expect(methods).toHaveLength(1);
+    expect(methods[0]?.providerMethodId).toBe("pm_provider_1");
+    expect(methods[0]?.isDefault).toBe(true);
   });
 });

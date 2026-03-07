@@ -1,6 +1,5 @@
 export interface Customer {
   id: string;
-  referenceId: string;
   email: string | null;
   name: string | null;
   metadata: Record<string, string> | null;
@@ -11,7 +10,6 @@ export interface Customer {
 
 export interface PaymentMethod {
   id: string;
-  customerId: string;
   providerId: string;
   providerMethodId: string;
   type: string;
@@ -24,10 +22,38 @@ export interface PaymentMethod {
   updatedAt: Date;
 }
 
-export interface ProviderCustomer {
+export interface InternalPaymentMethod extends PaymentMethod {
+  customerId: string;
+}
+
+export interface Charge {
+  id: string;
+  providerId: string;
+  providerChargeId: string;
+  status: string;
+  amount: number;
+  currency: string;
+  description: string | null;
+  metadata: Record<string, string> | null;
+  createdAt: Date;
+}
+
+export interface InternalCharge extends Charge {
+  customerId: string;
+  paymentMethodId: string | null;
+}
+
+export interface InternalProviderCustomer {
   id: string;
   customerId: string;
   providerId: string;
   providerCustomerId: string;
   createdAt: Date;
+}
+
+export interface Refund {
+  amount: number;
+  currency: string;
+  providerRefundId?: string | null;
+  status: string;
 }

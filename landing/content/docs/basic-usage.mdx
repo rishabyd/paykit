@@ -41,18 +41,18 @@ Attach a payment method to a customer after collecting it through a client-side 
 ```ts
 // Attach a payment method from the provider
 await paykit.paymentMethods.attach({
-  customerId: "cus_paykit_abc",
+  customerId: "user_123",
   providerToken: "pm_stripe_xyz", // token from client-side collection
 });
 
 // List a customer's payment methods
 const methods = await paykit.paymentMethods.list({
-  customerId: "cus_paykit_abc",
+  customerId: "user_123",
 });
 
 // Set a default payment method
 await paykit.paymentMethods.setDefault({
-  customerId: "cus_paykit_abc",
+  customerId: "user_123",
   paymentMethodId: "pm_paykit_def",
 });
 ```
@@ -65,7 +65,7 @@ Create a subscription by specifying the customer, amount, and billing interval. 
 
 ```ts
 const subscription = await paykit.subscriptions.create({
-  customerId: "cus_paykit_abc",
+  customerId: "user_123",
   items: [
     {
       description: "Pro Plan",
@@ -161,7 +161,7 @@ Events are always based on your database state, not raw provider payloads. This 
 Add multiple providers to route payments based on region, currency, or business rules.
 
 ```ts
-import { stripe } from "paykitjs/providers/stripe";
+import { stripe } from "@paykitjs/stripe";
 import { paypal } from "paykitjs/providers/paypal";
 
 const paykit = createPayKit({

@@ -1,13 +1,11 @@
-import { generateId } from "../core/utils";
 import { defineProvider } from "../providers/provider";
-import type { NormalizedWebhookEvent } from "../types/events";
 
 export function mockProvider() {
   return defineProvider({
     id: "mock",
 
     async upsertCustomer(data) {
-      return { providerCustomerId: `mock_cust_${data.referenceId}` };
+      return { providerCustomerId: `mock_cus_${data.id}` };
     },
 
     async checkout() {
@@ -20,15 +18,8 @@ export function mockProvider() {
 
     async detachPaymentMethod() {},
 
-    async handleWebhook(data) {
-      const event: NormalizedWebhookEvent = {
-        name: "webhook.received",
-        payload: {
-          hasBody: data.body !== null,
-          webhookId: generateId("evt"),
-        },
-      };
-      return event;
+    async handleWebhook() {
+      return [];
     },
   });
 }

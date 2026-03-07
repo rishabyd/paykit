@@ -12,8 +12,8 @@ export default function Home() {
               Trigger checkout through tRPC
             </h1>
             <p className="max-w-2xl text-base text-white/70">
-              Use this page to exercise the Next.js to tRPC to PayKit checkout path against a mock
-              provider during development.
+              Use this page to exercise the Next.js to tRPC to PayKit checkout path against Stripe
+              in test mode during development.
             </p>
           </div>
 

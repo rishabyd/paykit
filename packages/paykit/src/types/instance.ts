@@ -1,7 +1,7 @@
 import type { Customer, PaymentMethod } from "./models";
 
 export interface CustomerIdentity {
-  referenceId: string;
+  id: string;
   email?: string;
   name?: string;
   metadata?: Record<string, string>;
@@ -54,8 +54,8 @@ export interface ScopedPaymentMethodNamespace<TProviderId extends string = strin
 
 export interface CustomerNamespace {
   sync(input: CustomerIdentity): Promise<Customer>;
-  get(input: { referenceId: string }): Promise<Customer | null>;
-  delete(input: { referenceId: string }): Promise<void>;
+  get(input: { id: string }): Promise<Customer | null>;
+  delete(input: { id: string }): Promise<void>;
 }
 
 export interface ScopedPayKitInstance<TProviderId extends string = string> {
@@ -69,7 +69,7 @@ export interface PayKitInstance<TProviderId extends string = string> {
   paymentMethod: RootPaymentMethodNamespace<TProviderId>;
   handleWebhook(input: {
     providerId: TProviderId;
-    body: unknown;
+    body: string;
     headers: Record<string, string>;
   }): Promise<{ received: true }>;
   asCustomer(identity: CustomerIdentity): ScopedPayKitInstance<TProviderId>;

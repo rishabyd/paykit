@@ -400,7 +400,7 @@ const _categoryColors: Record<string, string> = {
 
 const codeExamples: Record<string, string> = {
   Checkout: `const checkout = await paykit.api.createCheckout({
-  customerId: "cust_abc",
+  customerId: "user_123",
   amount: 9900, // $99.00
   description: "Lifetime License",
   successURL: "https://myapp.com/success",
@@ -410,7 +410,7 @@ const codeExamples: Record<string, string> = {
 
 // redirect user to checkout.url`,
   Subscriptions: `const subscription = await paykit.api.createSubscription({
-  customerId: "cust_abc",
+  customerId: "user_123",
   amount: 2900, // $29/mo
   interval: "month",
   description: "Pro Plan",
@@ -437,7 +437,7 @@ await paykit.api.cancelSubscription({
   },
 });`,
   Invoices: `const invoices = await paykit.api.listInvoices({
-  customerId: "cust_abc",
+  customerId: "user_123",
   status: "paid",
   limit: 10,
 });
@@ -449,7 +449,7 @@ const invoice = await paykit.api.getInvoice({ id: "inv_abc" });
 };
 
 export const serverCode = `import { createPayKit } from "paykitjs"
-import { stripe } from "paykitjs/providers/stripe"
+import { stripe } from "@paykitjs/stripe"
 import { drizzleAdapter } from "paykitjs/adapters/drizzle"
 
 export const paykit = createPayKit({

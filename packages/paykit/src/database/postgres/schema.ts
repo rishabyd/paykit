@@ -15,7 +15,6 @@ export const customer = pgTable(
   "customer",
   {
     id: text("id").primaryKey(),
-    referenceId: text("reference_id").notNull(),
     email: text("email"),
     name: text("name"),
     metadata: jsonb("metadata").$type<Record<string, string> | null>(),
@@ -23,10 +22,7 @@ export const customer = pgTable(
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
-  (table) => [
-    uniqueIndex("paykit_customer_reference_id_unique").on(table.referenceId),
-    index("paykit_customer_deleted_at_idx").on(table.deletedAt),
-  ],
+  (table) => [index("paykit_customer_deleted_at_idx").on(table.deletedAt)],
 );
 
 export const paymentMethod = pgTable(

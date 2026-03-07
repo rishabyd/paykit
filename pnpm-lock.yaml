@@ -41,6 +41,9 @@ importers:
 
   apps/e2e-frontend:
     dependencies:
+      '@paykitjs/stripe':
+        specifier: workspace:*
+        version: link:../../packages/stripe
       '@t3-oss/env-nextjs':
         specifier: ^0.12.0
         version: 0.12.0(typescript@5.9.2)(valibot@1.2.0(typescript@5.9.2))(zod@3.25.76)
@@ -257,6 +260,22 @@ importers:
       pg-mem:
         specifier: ^3.0.14
         version: 3.0.14(kysely@0.28.11)(postgres@3.4.8)
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.2
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18(@types/node@25.3.0)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.31.1)(msw@2.12.10(@types/node@25.3.0)(typescript@5.9.2))(tsx@4.21.0)(yaml@2.8.2)
+
+  packages/stripe:
+    dependencies:
+      paykitjs:
+        specifier: workspace:*
+        version: link:../paykit
+      stripe:
+        specifier: ^19.1.0
+        version: 19.3.1(@types/node@25.3.0)
+    devDependencies:
       typescript:
         specifier: ^5.9.2
         version: 5.9.2
@@ -5207,6 +5226,16 @@ packages:
   strip-final-newline@4.0.0:
     resolution: {integrity: sha512-aulFJcD6YK8V1G7iRB5tigAP4TsHBZZrOV8pjV++zdUwmeV8uzbY7yn6h9MswN62adStNZFuCIx4haBnRuMDaw==}
     engines: {node: '>=18'}
+
+  stripe@19.3.1:
+    resolution: {integrity: sha512-5NXhLxTZ+4uO1wnsmNysILVuyeZ1Xia7niz/8ykBkGJkCcrY2WyQZwcfYuWZmZEJtWr2+0j49JXwNC6y9CHL7Q==}
+    engines: {node: '>=16'}
+    deprecated: This version has a major bug where the Files API times out. See issue 2538
+    peerDependencies:
+      '@types/node': '>=16'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
 
   style-to-js@1.1.21:
     resolution: {integrity: sha512-RjQetxJrrUJLQPHbLku6U/ocGtzyjbJMP9lCNK7Ag0CNh690nSH8woqWH9u16nMjYBAok+i7JO1NP2pOy8IsPQ==}
@@ -10990,6 +11019,12 @@ snapshots:
   strip-final-newline@2.0.0: {}
 
   strip-final-newline@4.0.0: {}
+
+  stripe@19.3.1(@types/node@25.3.0):
+    dependencies:
+      qs: 6.15.0
+    optionalDependencies:
+      '@types/node': 25.3.0
 
   style-to-js@1.1.21:
     dependencies:

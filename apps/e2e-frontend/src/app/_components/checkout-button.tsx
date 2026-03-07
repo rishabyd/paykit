@@ -1,17 +1,27 @@
 "use client";
 
+import { useEffect } from "react";
+
 import { api } from "@/trpc/react";
 
 export function CheckoutButton() {
   const createCheckout = api.paykit.createCheckout.useMutation();
+
+  useEffect(() => {
+    if (!createCheckout.data?.url) {
+      return;
+    }
+
+    window.location.assign(createCheckout.data.url);
+  }, [createCheckout.data?.url]);
 
   return (
     <div className="flex w-full max-w-xl flex-col gap-4 rounded-3xl border border-white/10 bg-white/5 p-6">
       <div className="space-y-2">
         <h2 className="text-2xl font-semibold text-white">Checkout test</h2>
         <p className="text-sm text-white/70">
-          This button calls the app&apos;s tRPC mutation, which syncs a demo customer and creates a
-          PayKit checkout with the mock provider.
+          This button calls the app&apos;s tRPC mutation, which syncs a demo customer and starts a
+          real hosted Stripe Checkout session through PayKit.
         </p>
       </div>
 
@@ -21,7 +31,7 @@ export function CheckoutButton() {
         disabled={createCheckout.isPending}
         onClick={() => createCheckout.mutate()}
       >
-        {createCheckout.isPending ? "Creating checkout..." : "Create checkout"}
+        {createCheckout.isPending ? "Starting Stripe Checkout..." : "Start Stripe Checkout"}
       </button>
 
       {createCheckout.error ? (
@@ -33,8 +43,8 @@ export function CheckoutButton() {
       {createCheckout.data ? (
         <div className="space-y-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-50">
           <p>
-            Checkout created for{" "}
-            <span className="font-medium">{createCheckout.data.referenceId}</span>.
+            Redirecting <span className="font-medium">{createCheckout.data.customerId}</span> to
+            Stripe Checkout.
           </p>
           <a
             className="inline-flex break-all text-emerald-100 underline underline-offset-4"
@@ -42,7 +52,7 @@ export function CheckoutButton() {
             rel="noreferrer"
             target="_blank"
           >
-            {createCheckout.data.url}
+            Open checkout manually
           </a>
         </div>
       ) : null}

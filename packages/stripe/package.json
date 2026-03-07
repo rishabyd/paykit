@@ -1,0 +1,25 @@
+{
+  "name": "@paykitjs/stripe",
+  "version": "0.1.0",
+  "description": "Stripe provider adapter for PayKit",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getpaykit/paykit.git"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "paykitjs": "workspace:*",
+    "stripe": "^19.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "vitest": "^4.0.18"
+  }
+}

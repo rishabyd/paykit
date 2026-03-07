@@ -1,6 +1,6 @@
 import { createPostgresDatabase, type PayKitDatabase } from "../database/postgres/database";
 import type { PayKitProvider } from "../providers/provider";
-import type { PayKitEventHandler } from "../types/events";
+import type { PayKitEventHandlers } from "../types/events";
 import type { PayKitOptions, ProviderId } from "../types/options";
 
 const noopLogger = {
@@ -23,7 +23,7 @@ export interface PayKitContext<
     warn: (message: string, ...args: unknown[]) => void;
     error: (message: string, ...args: unknown[]) => void;
   };
-  eventHandlers: Record<string, PayKitEventHandler>;
+  eventHandlers: PayKitEventHandlers;
 }
 
 export async function createContext<const TProviders extends readonly PayKitProvider[]>(

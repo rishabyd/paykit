@@ -93,7 +93,7 @@ Create a file to initialize PayKit with your provider and database adapters.
 
 ```ts title="lib/paykit.ts"
 import { createPayKit } from "paykitjs";
-import { stripe } from "paykitjs/providers/stripe";
+import { stripe } from "@paykitjs/stripe";
 import { prismaAdapter } from "paykitjs/adapters/prisma";
 import { prisma } from "./prisma"; // your Prisma client
 

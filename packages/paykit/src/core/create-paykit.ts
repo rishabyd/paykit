@@ -1,10 +1,6 @@
 import type { PayKitProvider } from "../providers/provider";
 import { createCheckout } from "../services/checkout-service";
-import {
-  deleteCustomerByReferenceId,
-  getCustomerByReferenceId,
-  syncCustomer,
-} from "../services/customer-service";
+import { deleteCustomerById, getCustomerById, syncCustomer } from "../services/customer-service";
 import {
   attachPaymentMethod,
   detachPaymentMethod,
@@ -30,11 +26,11 @@ export function createPayKit<const TProviders extends readonly PayKitProvider[]>
       },
       async get(input) {
         const ctx = await contextPromise;
-        return getCustomerByReferenceId(ctx.database, input.referenceId);
+        return getCustomerById(ctx.database, input.id);
       },
       async delete(input) {
         const ctx = await contextPromise;
-        await deleteCustomerByReferenceId(ctx.database, input.referenceId);
+        await deleteCustomerById(ctx.database, input.id);
       },
     },
     checkout: {

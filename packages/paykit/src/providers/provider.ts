@@ -13,7 +13,7 @@ export interface PayKitProvider<TId extends string = string> {
   id: TId;
 
   upsertCustomer(data: {
-    referenceId: string;
+    id: string;
     email?: string;
     name?: string;
     metadata?: Record<string, string>;
@@ -37,9 +37,9 @@ export interface PayKitProvider<TId extends string = string> {
   detachPaymentMethod(data: { providerMethodId: string }): Promise<void>;
 
   handleWebhook(data: {
-    body: unknown;
+    body: string;
     headers: Record<string, string>;
-  }): Promise<NormalizedWebhookEvent | NormalizedWebhookEvent[]>;
+  }): Promise<NormalizedWebhookEvent[]>;
 }
 
 export function defineProvider<const TId extends string>(
