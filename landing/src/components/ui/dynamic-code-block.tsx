@@ -49,7 +49,7 @@ function DefaultPre(props: ComponentProps<"pre">) {
     <CodeBlock
       {...props}
       {...extraProps}
-      className={cn("my-0 border-t-0 rounded-none", props.className, extraProps?.className)}
+      className={cn("my-0 border-t-0", props.className, extraProps?.className)}
     >
       <Pre className="py-2">{props.children}</Pre>
     </CodeBlock>

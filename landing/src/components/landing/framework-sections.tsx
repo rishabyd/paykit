@@ -478,6 +478,16 @@ import { paykit } from "@/lib/paykit"
 // Handles webhooks and client API requests
 export const { GET, POST } = paykit.handler`;
 
+const SHARED_CODEBLOCK_PROPS = {
+  className:
+    "border-0 my-0 shadow-none bg-neutral-50 dark:bg-background [&_div]:bg-neutral-50 [&_div]:dark:bg-background",
+  keepBackground: true,
+  "data-line-numbers": true,
+  viewportProps: {
+    className: "overflow-x-auto overflow-y-visible max-h-none",
+  },
+} as const;
+
 export function ServerClientTabs() {
   const [activeTab, setActiveTab] = useState<"server" | "handler">("server");
   const serverCodeBlockClassName = activeTab === "server" ? "block" : "hidden";
@@ -485,7 +495,7 @@ export function ServerClientTabs() {
 
   return (
     <div className="relative">
-      <div className="dark:bg-background border-foreground/[0.1] relative overflow-hidden rounded-lg border bg-neutral-50">
+      <div className="dark:bg-background border-foreground/[0.1] relative overflow-hidden rounded-sm border bg-neutral-50">
         <div className="border-foreground/[0.08] dark:bg-card/50 flex border-b bg-neutral-100/50">
           <button
             type="button"
@@ -519,34 +529,10 @@ export function ServerClientTabs() {
 
         <div className="relative">
           <div className={serverCodeBlockClassName}>
-            <DynamicCodeBlock
-              lang="ts"
-              code={serverCode}
-              codeblock={{
-                className:
-                  "border-0 rounded-none my-0 shadow-none bg-neutral-50 dark:bg-background [&_div]:bg-neutral-50 [&_div]:dark:bg-background",
-                keepBackground: true,
-                "data-line-numbers": true,
-                viewportProps: {
-                  className: "overflow-x-auto overflow-y-visible max-h-none",
-                },
-              }}
-            />
+            <DynamicCodeBlock lang="ts" code={serverCode} codeblock={SHARED_CODEBLOCK_PROPS} />
           </div>
           <div className={handlerCodeBlockClassName}>
-            <DynamicCodeBlock
-              lang="ts"
-              code={handlerCode}
-              codeblock={{
-                className:
-                  "border-0 rounded-none my-0 shadow-none bg-neutral-50 dark:bg-background [&_div]:bg-neutral-50 [&_div]:dark:bg-background",
-                keepBackground: true,
-                "data-line-numbers": true,
-                viewportProps: {
-                  className: "overflow-x-auto overflow-y-visible max-h-none",
-                },
-              }}
-            />
+            <DynamicCodeBlock lang="ts" code={handlerCode} codeblock={SHARED_CODEBLOCK_PROPS} />
           </div>
         </div>
       </div>
@@ -572,8 +558,7 @@ export function CodeExamplesSection() {
         provider you use.
       </p>
 
-      <div className="border-foreground/[0.1] dark:bg-background/40 overflow-hidden border bg-neutral-50/50">
-        {/* Tabs */}
+      <div className="border-foreground/[0.1] dark:bg-background/40 overflow-hidden rounded-sm border bg-neutral-50/50">
         <div className="border-foreground/[0.09] dark:bg-card/50 no-scrollbar flex overflow-x-auto border-b bg-neutral-100/50">
           {tabs.map((tab) => (
             <button
@@ -594,22 +579,13 @@ export function CodeExamplesSection() {
           ))}
         </div>
 
-        {/* Code block */}
         <div>
           {tabs.map((tab) => (
             <div key={tab} className={activeTab === tab ? "block" : "hidden"}>
               <DynamicCodeBlock
                 lang="ts"
                 code={codeExamples[tab] ?? ""}
-                codeblock={{
-                  className:
-                    "border-0 rounded-none my-0 shadow-none bg-neutral-50 dark:bg-background [&_div]:bg-neutral-50 [&_div]:dark:bg-background",
-                  keepBackground: true,
-                  "data-line-numbers": true,
-                  viewportProps: {
-                    className: "overflow-x-auto overflow-y-visible max-h-none",
-                  },
-                }}
+                codeblock={SHARED_CODEBLOCK_PROPS}
               />
             </div>
           ))}

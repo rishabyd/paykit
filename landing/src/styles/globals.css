@@ -9,6 +9,25 @@
 
 @custom-variant dark (&:is(.dark *));
 
+.hero-dots {
+  mask-image: radial-gradient(ellipse 70% 8% at 50% 160px, black 0%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 8% at 50% 160px, black 0%, transparent 100%);
+}
+
+@media (min-width: 768px) {
+  .hero-dots {
+    mask-image: radial-gradient(ellipse 70% 10% at 50% 220px, black 0%, transparent 100%);
+    -webkit-mask-image: radial-gradient(ellipse 70% 10% at 50% 220px, black 0%, transparent 100%);
+  }
+}
+
+@media (min-width: 1024px) {
+  .hero-dots {
+    mask-image: radial-gradient(ellipse 70% 12% at 50% 250px, black 0%, transparent 100%);
+    -webkit-mask-image: radial-gradient(ellipse 70% 12% at 50% 250px, black 0%, transparent 100%);
+  }
+}
+
 @keyframes icon-bounce {
   0% {
     transform: translateY(0);
@@ -503,11 +522,11 @@ input[type="search"]::-webkit-search-results-decoration {
   display: hidden;
 }
 
-/* Code blocks — flat near-black, sharp edges, no gradients */
+/* Code blocks — flat near-black, rounded edges, no gradients */
 .dark .shiki {
   background-color: var(--card) !important;
   border-color: rgba(255, 255, 255, 0.06);
-  border-radius: 0 !important;
+  border-radius: var(--radius-sm) !important;
 }
 
 /* Tab/card wrappers containing code blocks */
@@ -516,7 +535,7 @@ input[type="search"]::-webkit-search-results-decoration {
 .dark div:has(> [role="tablist"]):has(.shiki) {
   background-color: var(--card) !important;
   border-color: rgba(255, 255, 255, 0.06);
-  border-radius: 0 !important;
+  border-radius: var(--radius-sm) !important;
 }
 
 /* Override when keepBackground is enabled */
@@ -531,13 +550,13 @@ input[type="search"]::-webkit-search-results-decoration {
 .dark [role="tablist"]:has(+ div .shiki) {
   background: transparent;
   border-color: rgba(255, 255, 255, 0.06);
-  border-radius: 0 !important;
+  border-radius: var(--radius-sm) !important;
 }
 
 /* Tab content panel background */
 .dark [role="tabpanel"]:has(.shiki) {
   background-color: var(--card) !important;
-  border-radius: 0 !important;
+  border-radius: var(--radius-sm) !important;
 }
 
 /* Code block inside tabs — match parent, no extra border/shadow */
@@ -545,7 +564,7 @@ input[type="search"]::-webkit-search-results-decoration {
   background-color: var(--card) !important;
   border: none;
   box-shadow: none;
-  border-radius: 0 !important;
+  border-radius: var(--radius-sm) !important;
 }
 
 /* Code block content viewport — force near-black in dark mode */
@@ -562,24 +581,24 @@ input[type="search"]::-webkit-search-results-decoration {
   border-color: rgba(255, 255, 255, 0.06);
 }
 
-/* All code block figures — sharp corners (both themes) */
+/* All code block figures — rounded corners (both themes) */
 figure:has(.shiki),
 figure.shiki,
 [data-slot="tabs"]:has(.shiki),
 .bg-fd-card:has(.shiki) {
-  border-radius: 0 !important;
+  border-radius: var(--radius-sm) !important;
   overflow: hidden;
 }
 
 figure.shiki > div:first-child,
 [role="tablist"]:has(+ [role="tabpanel"] .shiki),
 [role="tablist"]:has(+ div .shiki) {
-  border-radius: 0 !important;
+  border-radius: var(--radius-sm) !important;
 }
 
 [role="tabpanel"]:has(.shiki),
 [role="tabpanel"] .shiki {
-  border-radius: 0 !important;
+  border-radius: var(--radius-sm) !important;
 }
 
 /* Respect prefers-reduced-motion for accessibility (WCAG 2.3.3) */
