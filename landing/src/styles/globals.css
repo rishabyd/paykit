@@ -139,7 +139,7 @@
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.87 0 0);
   --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
+  --secondary: oklch(0.24 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
@@ -310,8 +310,7 @@ html:not([data-anchor-scrolling]) {
 
 /* Fumadocs sidebar collapse trigger icon */
 button[aria-label="Collapse Sidebar"] svg {
-  width: 16px;
-  height: 16px;
+  @apply size-4;
 }
 
 /* Fumadocs sidebar: edge-to-edge item rows with explicit horizontal padding */
@@ -336,22 +335,17 @@ button[aria-label="Collapse Sidebar"] svg {
 #nd-sidebar-mobile > div.flex.flex-col.gap-3.p-4.pb-2,
 #nd-sidebar-mobile > .min-h-0.flex-1,
 #nd-sidebar-mobile > div.flex.flex-col.border-t.p-4.pt-2 {
-  border-left: 1px solid var(--border);
+  @apply border-border border-l;
 }
 
 #nd-sidebar > div.flex.flex-col.border-t.p-4.pt-2:has(.docs-sidebar-github-button),
 #nd-sidebar-mobile > div.flex.flex-col.border-t.p-4.pt-2:has(.docs-sidebar-github-button) {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: center !important;
-  justify-content: flex-start !important;
-  gap: 0.5rem;
+  @apply flex flex-row items-center justify-start gap-2;
 }
 
 #nd-sidebar .docs-sidebar-github-button,
 #nd-sidebar-mobile .docs-sidebar-github-button {
-  border: 0;
-  border-radius: var(--radius);
+  @apply rounded-[var(--radius)] border-0;
 }
 
 #nd-sidebar,
@@ -364,8 +358,7 @@ button[aria-label="Collapse Sidebar"] svg {
 #nd-sidebar-mobile
   [data-radix-scroll-area-viewport]
   :is(a, button).flex.flex-row.items-center.gap-2 {
-  width: 100%;
-  border-radius: 0 !important;
+  @apply w-full rounded-none;
   padding-inline: 1.25rem !important;
 }
 
@@ -379,9 +372,10 @@ button[aria-label="Collapse Sidebar"] svg {
   > div
   > [data-state]
   > :is(button, a).flex.flex-row.items-center.gap-2 {
-  border-top: 1px solid color-mix(in oklch, var(--border) 65%, transparent);
-  border-bottom: 1px solid color-mix(in oklch, var(--border) 65%, transparent);
-  border-color: color-mix(in oklch, var(--border) 65%, transparent) !important;
+  @apply border-border;
+  border-top: 1px solid;
+  border-bottom: 1px solid;
+  border-color: var(--border) !important;
   transition-property: background-color, color !important;
   min-height: 41px !important;
 }
@@ -429,12 +423,60 @@ button[aria-label="Collapse Sidebar"] svg {
   transform: rotate(180deg);
 }
 
+/* Category triggers: top divider only, except for the first item */
+#nd-sidebar
+  [data-radix-scroll-area-viewport]
+  > div
+  > [data-state]
+  > button[aria-expanded]:not([data-slot="dropdown-menu-trigger"]).flex.flex-row.items-center.gap-2,
+#nd-sidebar-mobile
+  [data-radix-scroll-area-viewport]
+  > div
+  > [data-state]
+  > button[aria-expanded]:not(
+    [data-slot="dropdown-menu-trigger"]
+  ).flex.flex-row.items-center.gap-2 {
+  border-bottom: 0;
+}
+
+#nd-sidebar
+  [data-radix-scroll-area-viewport]
+  > div
+  > [data-state]:first-child
+  > button[aria-expanded]:not([data-slot="dropdown-menu-trigger"]).flex.flex-row.items-center.gap-2,
+#nd-sidebar-mobile
+  [data-radix-scroll-area-viewport]
+  > div
+  > [data-state]:first-child
+  > button[aria-expanded]:not(
+    [data-slot="dropdown-menu-trigger"]
+  ).flex.flex-row.items-center.gap-2 {
+  border-top: 0;
+}
+
+#nd-sidebar
+  [data-radix-scroll-area-viewport]
+  > div
+  > [data-state="closed"]
+  + [data-state]
+  > button[aria-expanded]:not([data-slot="dropdown-menu-trigger"]).flex.flex-row.items-center.gap-2,
+#nd-sidebar-mobile
+  [data-radix-scroll-area-viewport]
+  > div
+  > [data-state="closed"]
+  + [data-state]
+  > button[aria-expanded]:not(
+    [data-slot="dropdown-menu-trigger"]
+  ).flex.flex-row.items-center.gap-2 {
+  border-top: 1px solid var(--border);
+}
+
 /* Sidebar search row: full width like category rows */
 #nd-sidebar > div.flex.flex-col.gap-3.p-4.pb-2,
 #nd-sidebar-mobile > div.flex.flex-col.gap-3.p-4.pb-2 {
-  padding-inline: 0 !important;
+  @apply px-0;
   padding-top: calc(0.5rem + 2px) !important;
-  padding-bottom: 0 !important;
+  @apply pb-0;
   row-gap: 0.5rem !important;
 }
 
@@ -445,14 +487,16 @@ button[aria-label="Collapse Sidebar"] svg {
 
 #nd-sidebar [data-search-full],
 #nd-sidebar-mobile [data-search-full] {
-  width: 100%;
+  @apply w-full rounded-none border-x-0 shadow-none;
   min-height: 40px !important;
-  border-radius: 0 !important;
   padding-inline: 1.25rem !important;
   padding-block: 0.5rem !important;
-  border-inline-width: 0 !important;
-  box-shadow: none !important;
   filter: none !important;
+}
+
+#nd-sidebar [data-search-full] > svg,
+#nd-sidebar-mobile [data-search-full] > svg {
+  @apply size-3.5 shrink-0;
 }
 
 #nd-sidebar
@@ -471,16 +515,9 @@ button[aria-label="Collapse Sidebar"] svg {
 #nd-sidebar-mobile
   [data-radix-scroll-area-viewport]
   div.relative.flex.flex-row.items-center.gap-2.w-full {
-  border-radius: 0 !important;
-  padding-inline: 1.25rem !important;
-  padding-top: 0.5rem;
-  padding-bottom: 0.2rem;
-  font-size: 0.6875rem;
-  line-height: 0.95rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: color-mix(in oklch, var(--foreground) 30%, transparent);
-  gap: 0.5rem;
+  @apply text-foreground/35 flex h-[1.2rem] items-center gap-2 overflow-hidden rounded-none px-5 text-[0.6875rem] leading-[0.8rem] tracking-[0.06em] whitespace-nowrap uppercase;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 #nd-sidebar
@@ -489,10 +526,8 @@ button[aria-label="Collapse Sidebar"] svg {
 #nd-sidebar-mobile
   [data-radix-scroll-area-viewport]
   div.relative.flex.flex-row.items-center.gap-2.w-full::after {
+  @apply bg-border h-px flex-1;
   content: "";
-  flex: 1;
-  height: 1px;
-  background: color-mix(in oklch, var(--foreground) 10%, transparent);
 }
 
 /* Remove folder guide rail (left vertical trace) */
@@ -511,8 +546,7 @@ button[aria-label="Collapse Sidebar"] svg {
 /* Disabled sidebar items (url="#") */
 #nd-sidebar [data-radix-scroll-area-viewport] a[href="#"],
 #nd-sidebar-mobile [data-radix-scroll-area-viewport] a[href="#"] {
-  pointer-events: none;
-  opacity: 0.5;
+  @apply pointer-events-none opacity-50;
 }
 
 input[type="search"]::-webkit-search-cancel-button,
@@ -527,7 +561,7 @@ input[type="search"]::-webkit-search-results-decoration {
 .dark .shiki {
   background-color: var(--card) !important;
   border-color: rgba(255, 255, 255, 0.06);
-  border-radius: var(--radius-sm) !important;
+  border-radius: var(--radius-lg) !important;
 }
 
 /* Tab/card wrappers containing code blocks */
@@ -536,7 +570,7 @@ input[type="search"]::-webkit-search-results-decoration {
 .dark div:has(> [role="tablist"]):has(.shiki) {
   background-color: var(--card) !important;
   border-color: rgba(255, 255, 255, 0.06);
-  border-radius: var(--radius-sm) !important;
+  border-radius: var(--radius-lg) !important;
 }
 
 /* Override when keepBackground is enabled */
@@ -551,13 +585,13 @@ input[type="search"]::-webkit-search-results-decoration {
 .dark [role="tablist"]:has(+ div .shiki) {
   background: transparent;
   border-color: rgba(255, 255, 255, 0.06);
-  border-radius: var(--radius-sm) !important;
+  border-radius: var(--radius-lg) !important;
 }
 
 /* Tab content panel background */
 .dark [role="tabpanel"]:has(.shiki) {
   background-color: var(--card) !important;
-  border-radius: var(--radius-sm) !important;
+  border-radius: var(--radius-lg) !important;
 }
 
 /* Code block inside tabs — match parent, no extra border/shadow */
@@ -565,7 +599,7 @@ input[type="search"]::-webkit-search-results-decoration {
   background-color: var(--card) !important;
   border: none;
   box-shadow: none;
-  border-radius: var(--radius-sm) !important;
+  border-radius: var(--radius-lg) !important;
 }
 
 /* Code block content viewport — force near-black in dark mode */
@@ -587,19 +621,23 @@ figure:has(.shiki),
 figure.shiki,
 [data-slot="tabs"]:has(.shiki),
 .bg-fd-card:has(.shiki) {
-  border-radius: var(--radius-sm) !important;
+  border-radius: var(--radius-lg) !important;
   overflow: hidden;
 }
 
 figure.shiki > div:first-child,
 [role="tablist"]:has(+ [role="tabpanel"] .shiki),
 [role="tablist"]:has(+ div .shiki) {
-  border-radius: var(--radius-sm) !important;
+  border-radius: var(--radius-lg) !important;
 }
 
 [role="tabpanel"]:has(.shiki),
 [role="tabpanel"] .shiki {
-  border-radius: var(--radius-sm) !important;
+  border-radius: var(--radius-lg) !important;
+}
+
+.prose blockquote {
+  @apply rounded-lg;
 }
 
 /* Respect prefers-reduced-motion for accessibility (WCAG 2.3.3) */
