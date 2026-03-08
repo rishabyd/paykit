@@ -2,7 +2,7 @@ import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type * as PageTree from "fumadocs-core/page-tree";
 import { DocsLayout } from "fumadocs-ui/layouts/docs";
-import { BookOpen, Coins, Download, Folder, Play, SquareStack } from "lucide-react";
+import { BookOpen, Coins, Download, Folder, Github, Play, SquareStack } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 
 import { SidebarCategoryAccordion } from "@/components/docs/sidebar-category-accordion";
@@ -278,15 +278,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                   rel="noreferrer"
                   aria-label="GitHub repository"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    className="size-4.5"
-                    aria-hidden="true"
-                  >
-                    <path d="M12 .297a12 12 0 0 0-3.79 23.39c.6.111.82-.26.82-.577v-2.234c-3.338.726-4.042-1.61-4.042-1.61a3.18 3.18 0 0 0-1.334-1.756c-1.09-.745.084-.73.084-.73a2.52 2.52 0 0 1 1.84 1.238a2.55 2.55 0 0 0 3.487.995a2.55 2.55 0 0 1 .76-1.6c-2.665-.303-5.466-1.332-5.466-5.93a4.64 4.64 0 0 1 1.235-3.221a4.3 4.3 0 0 1 .117-3.176s1.008-.323 3.3 1.23a11.4 11.4 0 0 1 6.006 0c2.291-1.553 3.297-1.23 3.297-1.23a4.3 4.3 0 0 1 .12 3.176a4.63 4.63 0 0 1 1.233 3.22c0 4.61-2.806 5.624-5.479 5.921a2.85 2.85 0 0 1 .814 2.21v3.284c0 .32.216.694.825.576A12 12 0 0 0 12 .297" />
-                  </svg>
+                  <Github className="size-4.5" aria-hidden="true" />
                 </a>
               </Button>
               <ThemeSwitcher />
