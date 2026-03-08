@@ -5,8 +5,8 @@ import { Tab, Tabs } from "fumadocs-ui/components/tabs";
 import { DocsBody, DocsDescription, DocsPage, DocsTitle } from "fumadocs-ui/layouts/docs/page";
 import defaultMdxComponents from "fumadocs-ui/mdx";
 import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
-import type { ComponentProps } from "react";
+import { notFound } from "next/navigation";
+import type { ComponentPropsWithoutRef } from "react";
 
 import { TocProgressFooter } from "@/components/docs/toc-progress-footer";
 import { source } from "@/lib/source";
@@ -55,6 +55,9 @@ export default async function Page({ params }: DocsPageProps) {
         <MDXContent
           components={{
             ...defaultMdxComponents,
+            h1: ({ children, ...props }: ComponentPropsWithoutRef<"h1">) => (
+              <h2 {...props}>{children}</h2>
+            ),
             Callout,
             Card,
             Cards,
