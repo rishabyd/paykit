@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import type { Pool } from "pg";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createPGlitePool } from "../../test-utils/pglite-pool";
@@ -133,6 +132,12 @@ async function createFixture({
     "export const env = { DATABASE_URL: 'postgres://ignored' };\n",
   );
 
+  const configDirectory = path.dirname(path.join(cwd, filePath));
+  const toImportPath = (targetPath: string) => {
+    const relativePath = path.relative(configDirectory, targetPath);
+    return relativePath.startsWith(".") ? relativePath : `./${relativePath}`;
+  };
+
   const exportLine =
     exportStyle === "default"
       ? "export default createPayKit({ database: pool, providers: [mockProvider()] });\n"
@@ -141,9 +146,9 @@ async function createFixture({
   await fs.writeFile(
     path.join(cwd, filePath),
     [
-      `import { createPayKit } from ${JSON.stringify(createPayKitPath)};`,
-      `import { mockProvider } from ${JSON.stringify(mockProviderPath)};`,
-      `import { createPGlitePool } from ${JSON.stringify(pglitePoolPath)};`,
+      `import { createPayKit } from ${JSON.stringify(toImportPath(createPayKitPath))};`,
+      `import { mockProvider } from ${JSON.stringify(toImportPath(mockProviderPath))};`,
+      `import { createPGlitePool } from ${JSON.stringify(toImportPath(pglitePoolPath))};`,
       'import { env } from "@/env";',
       "",
       `const globalKey = ${JSON.stringify(globalKey)};`,
