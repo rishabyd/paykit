@@ -409,7 +409,7 @@ html:not([data-anchor-scrolling]) {
 }
 
 #nd-toc {
-  @apply pe-6;
+  @apply pe-5;
 }
 
 [data-toc-popover] {
