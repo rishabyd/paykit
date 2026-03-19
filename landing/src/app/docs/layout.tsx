@@ -11,14 +11,16 @@ import {
   isEnabledProviderPage,
   isProviderPage,
 } from "@/components/docs/docs-icons";
-import { SidebarCollapseButton } from "@/components/docs/sidebar-collapse-button";
 import { SidebarCategoryAccordion } from "@/components/docs/sidebar-category-accordion";
+import { SidebarCollapseButton } from "@/components/docs/sidebar-collapse-button";
 import { LogoLockup } from "@/components/icons/logo";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { URLs, VERSION_TEXT } from "@/lib/consts";
 import { source } from "@/lib/source";
+
+const DEFAULT_OPEN_CATEGORY_COUNT = 3;
 
 function normalizeName(name: string): string {
   return name.toLowerCase().replaceAll("-", " ").trim();
@@ -53,6 +55,7 @@ function withCategoryFolderDefaults(node: PageTree.Node): PageTree.Node {
 function groupCategories(nodes: PageTree.Node[]): PageTree.Node[] {
   const grouped: PageTree.Node[] = [];
   let currentCategory: PageTree.Folder | null = null;
+  let categoryIndex = 0;
 
   for (const node of nodes) {
     if (node.type === "separator" && node.name) {
@@ -60,9 +63,10 @@ function groupCategories(nodes: PageTree.Node[]): PageTree.Node[] {
         type: "folder",
         name: node.name,
         collapsible: true,
-        defaultOpen: false,
+        defaultOpen: categoryIndex < DEFAULT_OPEN_CATEGORY_COUNT,
         children: [],
       } as PageTree.Folder;
+      categoryIndex += 1;
 
       const icon = typeof node.name === "string" ? getDocsCategoryIcon(node.name) : undefined;
       (
