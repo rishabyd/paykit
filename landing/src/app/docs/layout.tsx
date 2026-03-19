@@ -102,7 +102,7 @@ function groupCategories(nodes: PageTree.Node[]): PageTree.Node[] {
           name: withPageLabel(
             nameStr,
             icon,
-            <span className="bg-fd-muted text-fd-muted-foreground rounded px-1.5 py-0.5 text-[10px] leading-none font-medium">
+            <span className="bg-fd-muted text-fd-muted-foreground rounded-sm px-1.5 py-0.5 text-[10px] leading-none font-medium">
               SOON
             </span>,
           ),
