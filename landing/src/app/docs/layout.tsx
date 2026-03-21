@@ -10,6 +10,7 @@ import {
   getDocsPageIcon,
   isEnabledProviderPage,
   isProviderPage,
+  isSoonPage,
 } from "@/components/docs/docs-icons";
 import { SidebarCategoryAccordion } from "@/components/docs/sidebar-category-accordion";
 import { SidebarCollapseButton } from "@/components/docs/sidebar-collapse-button";
@@ -96,7 +97,10 @@ function groupCategories(nodes: PageTree.Node[]): PageTree.Node[] {
             })
           : undefined;
 
-      if (nameStr && isProviderPage(nameStr) && !isEnabledProviderPage(nameStr)) {
+      if (
+        nameStr &&
+        ((isProviderPage(nameStr) && !isEnabledProviderPage(nameStr)) || isSoonPage(nameStr))
+      ) {
         mappedNode = {
           ...mappedNode,
           name: withPageLabel(
