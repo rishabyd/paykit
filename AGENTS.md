@@ -51,6 +51,7 @@ Enforced by oxlint, oxfmt, and TypeScript config. Follow strictly.
 - 2-space indent, oxfmt handles formatting — do not add Prettier or Biome
 - while using tailwing, prefer sizes in tw units like `-5` rather than in pixels via `-[20px]`
 - prefer to co-locate component Props with a function, rather than separating them into an interface
+- while using Zod, prefer not duplicate types, just infer them from schemas
 
 ## Landing Page Conventions
 
