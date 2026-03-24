@@ -48,7 +48,7 @@ describe("paykit migrate", () => {
       `
         select distinct table_name
         from information_schema.tables
-        where table_name in ('paykit_customer', 'paykit_payment', 'paykit_product', 'paykit_migrations')
+        where table_name in ('paykit_customer', 'paykit_payment', 'paykit_product', 'paykit_provider_product', 'paykit_migrations')
         order by table_name
       `,
     );
@@ -58,6 +58,7 @@ describe("paykit migrate", () => {
       "paykit_migrations",
       "paykit_payment",
       "paykit_product",
+      "paykit_provider_product",
     ]);
     await pool.end();
   }, 15_000);
@@ -76,7 +77,7 @@ describe("paykit migrate", () => {
 
     const pool = createPGlitePool(fixture.databasePath);
     const result = await pool.query("select count(*)::int as count from public.paykit_migrations");
-    expect((result.rows[0] as { count: number }).count).toBe(2);
+    expect((result.rows[0] as { count: number }).count).toBe(3);
     await pool.end();
   }, 15_000);
 
@@ -92,7 +93,7 @@ describe("paykit migrate", () => {
 
     const pool = createPGlitePool(fixture.databasePath);
     const result = await pool.query("select count(*)::int as count from public.paykit_migrations");
-    expect((result.rows[0] as { count: number }).count).toBe(2);
+    expect((result.rows[0] as { count: number }).count).toBe(3);
     await pool.end();
   }, 15_000);
 });

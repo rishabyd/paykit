@@ -2,9 +2,10 @@ import type { PayKitContext } from "../core/context";
 import type { StoredProduct } from "../types/models";
 import {
   getLatestProduct,
+  getProviderProductByProductId,
   insertProductVersion,
   updateProductName,
-  updateProductProviderIds,
+  upsertProviderProduct,
 } from "./product-service";
 
 export interface SyncProductResult {
@@ -23,6 +24,7 @@ function priceChanged(
 
 export async function syncProducts(ctx: PayKitContext): Promise<SyncProductResult[]> {
   const results: SyncProductResult[] = [];
+  const providerId = ctx.provider.id;
 
   for (const productDef of ctx.products) {
     const priceInterval = productDef.price.interval ?? null;
@@ -58,17 +60,26 @@ export async function syncProducts(ctx: PayKitContext): Promise<SyncProductResul
       action = "unchanged";
     }
 
-    if (action !== "unchanged" || !stored.providerProductId || !stored.providerPriceId) {
+    const existingProvider = await getProviderProductByProductId(
+      ctx.database,
+      productDef.id,
+      providerId,
+    );
+
+    const needsProviderSync =
+      action !== "unchanged" || !existingProvider;
+
+    if (needsProviderSync) {
       const providerResult = await ctx.provider.syncProduct({
         id: productDef.id,
         name: productDef.name,
         priceAmount: productDef.priceAmountCents,
         priceInterval,
-        existingProviderProductId: existing?.providerProductId ?? null,
-        existingProviderPriceId: action === "unchanged" ? stored.providerPriceId : null,
+        existingProviderProductId: existingProvider?.providerProductId ?? null,
+        existingProviderPriceId: action === "unchanged" ? (existingProvider?.providerPriceId ?? null) : null,
       });
 
-      await updateProductProviderIds(ctx.database, stored.internalId, providerResult);
+      await upsertProviderProduct(ctx.database, stored.internalId, providerId, providerResult);
     }
 
     results.push({

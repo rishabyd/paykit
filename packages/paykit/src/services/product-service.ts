@@ -2,8 +2,8 @@ import { and, desc, eq } from "drizzle-orm";
 
 import { generateId } from "../core/utils";
 import type { PayKitDatabase } from "../database";
-import { product } from "../database/postgres/schema";
-import type { StoredProduct } from "../types/models";
+import { product, providerProduct } from "../database/postgres/schema";
+import type { StoredProduct, StoredProviderProduct } from "../types/models";
 
 export async function getLatestProduct(
   database: PayKitDatabase,
@@ -72,17 +72,53 @@ export async function updateProductName(
     .where(eq(product.internalId, internalId));
 }
 
-export async function updateProductProviderIds(
+export async function getProviderProduct(
   database: PayKitDatabase,
-  internalId: string,
+  productInternalId: string,
+  providerId: string,
+): Promise<StoredProviderProduct | null> {
+  return (
+    (await database.query.providerProduct.findFirst({
+      where: and(
+        eq(providerProduct.productInternalId, productInternalId),
+        eq(providerProduct.providerId, providerId),
+      ),
+    })) ?? null
+  );
+}
+
+export async function getProviderProductByProductId(
+  database: PayKitDatabase,
+  productId: string,
+  providerId: string,
+): Promise<StoredProviderProduct | null> {
+  const latestProduct = await getLatestProduct(database, productId);
+  if (!latestProduct) {
+    return null;
+  }
+  return getProviderProduct(database, latestProduct.internalId, providerId);
+}
+
+export async function upsertProviderProduct(
+  database: PayKitDatabase,
+  productInternalId: string,
+  providerId: string,
   input: { providerProductId: string; providerPriceId: string },
 ): Promise<void> {
   await database
-    .update(product)
-    .set({
+    .insert(providerProduct)
+    .values({
+      productInternalId,
+      providerId,
       providerProductId: input.providerProductId,
       providerPriceId: input.providerPriceId,
-      updatedAt: new Date(),
+      createdAt: new Date(),
     })
-    .where(eq(product.internalId, internalId));
+    .onConflictDoUpdate({
+      target: [providerProduct.productInternalId, providerProduct.providerId],
+      set: {
+        providerProductId: input.providerProductId,
+        providerPriceId: input.providerPriceId,
+      },
+    });
 }

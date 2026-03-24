@@ -4,6 +4,7 @@ import {
   integer,
   jsonb,
   pgTableCreator,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -111,13 +112,24 @@ export const product = pgTable(
     version: integer("version").notNull().default(1),
     name: text("name").notNull(),
     priceAmount: integer("price_amount").notNull(),
-
     priceInterval: text("price_interval"),
-    providerProductId: text("provider_product_id"),
-    providerPriceId: text("provider_price_id"),
 
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [uniqueIndex("paykit_product_id_version_unique").on(table.id, table.version)],
+);
+
+export const providerProduct = pgTable(
+  "provider_product",
+  {
+    productInternalId: text("product_internal_id")
+      .notNull()
+      .references(() => product.internalId),
+    providerId: text("provider_id").notNull(),
+    providerProductId: text("provider_product_id").notNull(),
+    providerPriceId: text("provider_price_id").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.productInternalId, table.providerId] })],
 );

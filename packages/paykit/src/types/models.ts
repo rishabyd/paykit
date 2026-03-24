@@ -23,8 +23,14 @@ export interface StoredProduct {
   name: string;
   priceAmount: number;
   priceInterval: string | null;
-  providerProductId: string | null;
-  providerPriceId: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface StoredProviderProduct {
+  productInternalId: string;
+  providerId: string;
+  providerProductId: string;
+  providerPriceId: string;
+  createdAt: Date;
 }

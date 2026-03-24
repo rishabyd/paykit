@@ -3,7 +3,7 @@ export { createPayKit } from "./core/create-paykit";
 export type { PayKitOptions } from "./types/options";
 export type { CustomerIdentity, PayKitInstance } from "./types/instance";
 export type { PayKitProvider } from "./providers/provider";
-export type { Customer, StoredProduct } from "./types/models";
+export type { Customer, StoredProduct, StoredProviderProduct } from "./types/models";
 export type { PriceInterval, Product, ProductPrice } from "./types/product";
 export type {
   NormalizedPayment,
