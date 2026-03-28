@@ -8,17 +8,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { authClient } from "@/lib/auth-client";
 
 function getSafeRedirectPath(redirectTo: string | null) {
-	if (!redirectTo || !redirectTo.startsWith("/") || redirectTo.startsWith("//")) {
-		return "/";
-	}
+  if (!redirectTo || !redirectTo.startsWith("/") || redirectTo.startsWith("//")) {
+    return "/";
+  }
 
-	return redirectTo;
+  return redirectTo;
 }
 
 export function LoginPageContent() {
-	const searchParams = useSearchParams();
-	const redirectTo = getSafeRedirectPath(searchParams.get("redirect"));
-	const { data: session, isPending } = authClient.useSession();
+  const searchParams = useSearchParams();
+  const redirectTo = getSafeRedirectPath(searchParams.get("redirect"));
+  const { data: session, isPending } = authClient.useSession();
 
   if (isPending) {
     return (
@@ -37,9 +37,9 @@ export function LoginPageContent() {
     );
   }
 
-	if (session) {
-		redirect(redirectTo);
-	}
+  if (session) {
+    redirect(redirectTo);
+  }
 
   return (
     <div className="flex w-full max-w-lg flex-col gap-6">

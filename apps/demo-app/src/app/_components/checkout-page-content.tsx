@@ -38,15 +38,15 @@ export function CheckoutPageContent() {
     );
   }
 
-	if (isPending) {
-		return (
-			<div className="space-y-6">
-				<Skeleton className="h-8 w-48" />
-				<Skeleton className="h-4 w-64" />
-				<Skeleton className="h-48 w-full rounded-xl" />
-			</div>
-		);
-	}
+  if (isPending) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-64" />
+        <Skeleton className="h-48 w-full rounded-xl" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-8">

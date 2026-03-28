@@ -10,18 +10,18 @@ import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
 
 export function AuthForm({ redirectTo }: { redirectTo: string }) {
-	const router = useRouter();
-	const [email, setEmail] = useState("");
-	const [password, setPassword] = useState("");
-	const [name, setName] = useState("");
-	const [isSignUp, setIsSignUp] = useState(false);
-	const [error, setError] = useState("");
-	const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-	async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-		event.preventDefault();
-		setError("");
-		setLoading(true);
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setLoading(true);
 
     try {
       if (isSignUp) {
@@ -42,13 +42,13 @@ export function AuthForm({ redirectTo }: { redirectTo: string }) {
         }
       }
 
-			router.replace(redirectTo);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Something went wrong");
-		} finally {
-			setLoading(false);
-		}
-	}
+      router.replace(redirectTo);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <Card>
