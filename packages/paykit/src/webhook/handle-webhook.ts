@@ -56,16 +56,21 @@ async function emitCustomerUpdated(ctx: PayKitContext, customerId: string): Prom
   const plans = await getCurrentCustomerPlans(ctx.database, customerId);
   const payload = { customerId, plans };
 
-  await ctx.options.on?.["customer.updated"]?.({
-    name: "customer.updated",
-    payload,
-  });
-  await ctx.options.on?.["*"]?.({
-    event: {
+  try {
+    await ctx.options.on?.["customer.updated"]?.({
       name: "customer.updated",
       payload,
-    },
-  });
+    });
+    await ctx.options.on?.["*"]?.({
+      event: {
+        name: "customer.updated",
+        payload,
+      },
+    });
+  } catch (error) {
+    // User event handlers must not poison webhook processing
+    console.error("[paykit] Error in customer.updated event handler:", error);
+  }
 }
 
 function getSubscriptionEffectiveDate(input: {
@@ -695,11 +700,17 @@ export async function handleWebhook(
     headers: input.headers,
   });
 
-  // The first event in the batch is the primary webhook event and carries the
-  // real provider event ID. Synthetic sub-events reference it as a namespace.
-  const primaryPayload = events[0]?.payload as Record<string, unknown> | undefined;
-  const parentEventId =
-    typeof primaryPayload?.providerEventId === "string" ? primaryPayload.providerEventId : null;
+  // Find the provider event ID from any event in the batch. For checkout
+  // webhooks the synthetic sub-events come first (without providerEventId),
+  // followed by the checkout.completed event that carries the Stripe event ID.
+  let parentEventId: string | null = null;
+  for (const evt of events) {
+    const payload = evt.payload as Record<string, unknown>;
+    if (typeof payload.providerEventId === "string" && payload.providerEventId.length > 0) {
+      parentEventId = payload.providerEventId;
+      break;
+    }
+  }
 
   for (const [index, event] of events.entries()) {
     const providerEventId = getProviderEventId(event, index, parentEventId);
@@ -714,22 +725,31 @@ export async function handleWebhook(
     }
 
     try {
-      const customerIds = new Set<string>();
+      // Run all DB mutations inside a transaction so a mid-way crash
+      // doesn't leave partially applied state.
+      const customerIds = await ctx.database.transaction(async (tx) => {
+        const txCtx = { ...ctx, database: tx } as PayKitContext;
+        const ids = new Set<string>();
 
-      if (event.name === "checkout.completed") {
-        const customerId = await finalizeSubscriptionCheckout(ctx, event);
-        if (customerId) {
-          customerIds.add(customerId);
+        if (event.name === "checkout.completed") {
+          const customerId = await finalizeSubscriptionCheckout(txCtx, event);
+          if (customerId) {
+            ids.add(customerId);
+          }
         }
-      }
 
-      for (const action of event.actions ?? []) {
-        const customerId = await applyAction(ctx, action);
-        if (customerId) {
-          customerIds.add(customerId);
+        for (const action of event.actions ?? []) {
+          const customerId = await applyAction(txCtx, action);
+          if (customerId) {
+            ids.add(customerId);
+          }
         }
-      }
 
+        return ids;
+      });
+
+      // Emit user event handlers outside the transaction to avoid holding
+      // locks while user code runs.
       for (const customerId of customerIds) {
         await emitCustomerUpdated(ctx, customerId);
       }

@@ -29,7 +29,15 @@ export async function resolveCustomer(
     return identity.customerId;
   }
 
-  // Server-to-server: trust the explicit ID (no HTTP request / no identify)
+  // HTTP request present but no identify configured — reject to prevent IDOR.
+  // The explicitCustomerId comes from the request body and can't be trusted.
+  if (request) {
+    throw new APIError("UNAUTHORIZED", {
+      message: "identify must be configured to use HTTP API routes",
+    });
+  }
+
+  // Server-to-server: trust the explicit ID (no HTTP request)
   if (explicitCustomerId) {
     return explicitCustomerId;
   }

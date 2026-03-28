@@ -54,6 +54,7 @@ export function NavigationBar() {
           <div className="flex items-center">
             <button
               type="button"
+              aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
               onClick={() => setMobileMenuOpen((prev) => !prev)}
               className="text-foreground/65 dark:text-foreground/50 hover:text-foreground/80 flex items-center justify-center px-4 py-3 transition-colors"
             >

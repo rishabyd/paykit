@@ -145,30 +145,37 @@ export interface NormalizedWebhookEventMap {
   "payment_method.attached": {
     paymentMethod: NormalizedPaymentMethod;
     providerCustomerId: string;
+    providerEventId?: string;
   };
   "payment.succeeded": {
     payment: NormalizedPayment;
     providerCustomerId: string;
+    providerEventId?: string;
   };
   "payment.failed": {
     error: PayKitEventError;
     payment: NormalizedPayment;
     providerCustomerId: string;
+    providerEventId?: string;
   };
   "subscription.updated": {
     providerCustomerId: string;
+    providerEventId?: string;
     subscription: NormalizedSubscription;
   };
   "subscription.deleted": {
     providerCustomerId: string;
+    providerEventId?: string;
     providerSubscriptionId: string;
   };
   "invoice.updated": {
     invoice: NormalizedInvoice;
     providerCustomerId: string;
+    providerEventId?: string;
     providerSubscriptionId?: string | null;
   };
   "payment_method.detached": {
+    providerEventId?: string;
     providerMethodId: string;
   };
 }
