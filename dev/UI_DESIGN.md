@@ -13,6 +13,7 @@ These are landing pages we admire and draw inspiration from. We don't copy any o
 - [Notra](https://www.usenotra.com/)
 - [Tailwind CSS](https://tailwindcss.com/)
 - [Drizzle ORM](https://orm.drizzle.team/)
+- [Firecrawl](https://firecrawl.dev)
 
 ## Components
 
