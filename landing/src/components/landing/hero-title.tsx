@@ -49,7 +49,7 @@ export function HeroTitle() {
             render={<Link href="/docs" />}
             nativeButton={false}
             size="lg"
-            className="rounded-sm px-4 h-9.5"
+            className="px-4 h-9.5"
             variant="default"
           >
             Read Docs

@@ -24,10 +24,20 @@ export function HeroSection() {
 
           <HeroCodeBlock
             plansCodeBlock={
-              <CodeBlockContent lang="ts" code={heroPaykitCode} codeblock={codeBlockOverrides} />
+              <CodeBlockContent
+                lang="ts"
+                code={heroPaykitCode}
+                codeblock={codeBlockOverrides}
+                allowCopy={false}
+              />
             }
             configCodeBlock={
-              <CodeBlockContent lang="ts" code={heroConfigCode} codeblock={codeBlockOverrides} />
+              <CodeBlockContent
+                lang="ts"
+                code={heroConfigCode}
+                codeblock={codeBlockOverrides}
+                allowCopy={false}
+              />
             }
           />
         </div>

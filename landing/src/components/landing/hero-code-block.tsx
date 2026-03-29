@@ -124,12 +124,13 @@ export function HeroCodeBlock({
         {/* Content — fixed height */}
         <div className="relative h-[27.5rem] overflow-y-auto">
           {/* Push / back button */}
-          <div className="absolute right-2 bottom-2 z-10">
+          <div className="absolute right-2.5 bottom-2.5 z-10">
             <Button
               variant="outline"
               size={"sm"}
               onClick={view === "code" ? () => void runPush() : backToCode}
               disabled={pushing}
+              className={"bg-secondary/80!"}
             >
               {view === "code" ? (
                 <Terminal className="size-3.5" />
