@@ -296,7 +296,7 @@ export function DemoSection({ snippets }: { snippets: Record<SnippetKey, ReactNo
       <SectionContent>
         <div className="max-w-lg space-y-2">
           <h2 className="text-foreground/90 text-xl font-semibold tracking-tight sm:text-2xl">
-            See it in action
+            How it works
           </h2>
           <p className="text-foreground/45 text-sm leading-relaxed sm:text-base">
             Click around the app below. Every interaction shows the PayKit code that runs and the
@@ -304,11 +304,11 @@ export function DemoSection({ snippets }: { snippets: Record<SnippetKey, ReactNo
           </p>
         </div>
 
-        <div className="border-foreground/[0.08] mt-12 rounded-xl border p-1">
-          <div
-            ref={sectionRef}
-            className="flex flex-col gap-4 lg:flex-row lg:items-stretch lg:gap-2"
-          >
+        <div
+          ref={sectionRef}
+          className="mt-12 flex flex-col gap-4 lg:flex-row lg:items-stretch lg:gap-4"
+        >
+          <div className="border-foreground/[0.08] rounded-xl border p-1 lg:w-[73%]">
             <DemoAppWindow
               plan={plan}
               downgradeScheduled={downgradeScheduled}
@@ -322,7 +322,7 @@ export function DemoSection({ snippets }: { snippets: Record<SnippetKey, ReactNo
               streamingText={streamingText}
               upgradeBanner={upgradeBanner}
               chatRef={chatRef}
-              className={cn("lg:w-[73%]", WINDOW_HEIGHT)}
+              className={WINDOW_HEIGHT}
               onInputChange={setInput}
               onSend={handleSend}
               onUpgrade={() => void handleUpgrade()}
@@ -330,12 +330,10 @@ export function DemoSection({ snippets }: { snippets: Record<SnippetKey, ReactNo
               onResubscribe={() => void handleResubscribe()}
               onPortal={() => void handlePortal()}
             />
+          </div>
 
-            <DemoBackendPanel
-              cards={cards}
-              snippets={snippets}
-              className={cn("lg:w-[37%]", WINDOW_HEIGHT)}
-            />
+          <div className="border-foreground/[0.08] rounded-xl border p-1 lg:w-[37%]">
+            <DemoBackendPanel cards={cards} snippets={snippets} className={WINDOW_HEIGHT} />
           </div>
         </div>
       </SectionContent>

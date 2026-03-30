@@ -60,9 +60,9 @@ function FlowLog({
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               transition={{ duration: 0.3, ease: "easeOut" }}
-              className="border-foreground/[0.08] shrink-0 overflow-hidden rounded-md border border-dashed"
+              className="border-foreground/[0.08] shrink-0 overflow-hidden rounded-md border"
             >
-              <div className="text-foreground/35 border-foreground/[0.06] flex items-center gap-2 border-b border-dashed py-1.5 pr-2 pl-3.5 text-[11px] font-medium">
+              <div className="text-foreground/35 border-foreground/[0.06] flex items-center gap-2 border-b py-1.5 pr-1.5 pl-3 text-[11px] font-medium">
                 <User className="size-3 shrink-0" />
                 {card.trigger}
               </div>
