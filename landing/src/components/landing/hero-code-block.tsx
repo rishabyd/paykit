@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, DollarSign, Loader2, Play, RotateCcw, SparklesIcon, Terminal } from "lucide-react";
+import { Check, Loader2, RotateCcw, Terminal } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useState } from "react";
 

@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Section, SectionContent } from "@/components/layout/section";
-import { cn } from "@/lib/utils";
 
 import { DemoAppWindow } from "./demo-app-window";
 import { DemoBackendPanel } from "./demo-backend-panel";
