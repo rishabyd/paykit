@@ -27,6 +27,10 @@ export async function createContext(options: PayKitOptions): Promise<PayKitConte
     throw new Error("A provider is required");
   }
 
+  if (options.basePath && !options.basePath.startsWith("/")) {
+    throw new Error(`basePath must start with "/", received "${options.basePath}"`);
+  }
+
   const pool =
     typeof options.database === "string"
       ? new pg.Pool({ connectionString: options.database })
