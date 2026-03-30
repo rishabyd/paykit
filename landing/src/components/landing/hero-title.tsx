@@ -18,10 +18,7 @@ export function HeroTitle() {
   }, []);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: "easeOut" }}
+    <div
       className="relative flex w-full flex-col items-center text-center lg:items-start lg:text-left"
     >
       <div className="space-y-2.5 sm:space-y-4">
@@ -125,6 +122,6 @@ export function HeroTitle() {
           </Button>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
