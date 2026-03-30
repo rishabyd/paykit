@@ -36,11 +36,8 @@ async function pushAction(options: { config?: string; cwd: string; yes?: boolean
     const pendingMigrations = await getPendingMigrationCount(config.options.database);
 
     if (pendingMigrations > 0) {
-      p.log.step(
-        `${String(pendingMigrations)} pending migration${pendingMigrations === 1 ? "" : "s"}`,
-      );
       await migrateDatabase(config.options.database);
-      p.log.success("Schema migrated");
+      p.log.success(`Schema ${picocolors.dim("·")} migrated`);
     } else {
       p.log.step(`Schema ${picocolors.dim("·")} up to date`);
     }
@@ -82,14 +79,7 @@ async function pushAction(options: { config?: string; cwd: string; yes?: boolean
       p.log.success("Plans synced");
     }
 
-    // Summary
-    const parts: string[] = [];
-    if (pendingMigrations > 0) {
-      parts.push(`${String(pendingMigrations)} migration${pendingMigrations === 1 ? "" : "s"}`);
-    }
-    parts.push(`${String(results.length)} plan${results.length === 1 ? "" : "s"} synced`);
-
-    p.outro(`Done ${picocolors.dim("·")} ${parts.join(", ")}`);
+    p.outro(`Done ${picocolors.dim("·")} ${String(results.length)} plan${results.length === 1 ? "" : "s"} synced`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     p.log.error(message);

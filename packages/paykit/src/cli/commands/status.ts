@@ -64,7 +64,7 @@ async function statusAction(options: { config?: string; cwd: string }): Promise<
 
   const migrationStatus =
     pendingMigrations > 0
-      ? `${picocolors.red("✖")} ${String(pendingMigrations)} pending migration${pendingMigrations === 1 ? "" : "s"}`
+      ? `${picocolors.red("✖")} Schema needs migration`
       : `${picocolors.green("✔")} Schema up to date`;
 
   p.log.info(`Database\n  ${picocolors.green("✔")} ${connStr}\n  ${migrationStatus}`);
