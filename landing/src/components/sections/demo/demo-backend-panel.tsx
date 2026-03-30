@@ -26,7 +26,7 @@ export function DemoBackendPanel({
       )}
     >
       <div className="border-foreground/[0.08] flex h-10 shrink-0 items-center border-b border-dashed px-4">
-        <span className="text-foreground/30 font-mono text-xs uppercase tracking-wider">
+        <span className="text-foreground/45 font-mono text-xs uppercase tracking-wider">
           PAYKIT BACK-END
         </span>
       </div>
@@ -62,7 +62,7 @@ function FlowLog({
               transition={{ duration: 0.3, ease: "easeOut" }}
               className="border-foreground/[0.08] shrink-0 overflow-hidden rounded-md border"
             >
-              <div className="text-foreground/35 border-foreground/[0.06] flex items-center gap-2 border-b py-1.5 pr-1.5 pl-3 text-xs font-medium">
+              <div className="text-foreground/45 border-foreground/[0.06] flex items-center gap-2 border-b py-1.5 pr-1.5 pl-3 text-xs">
                 <User className="size-3 shrink-0" />
                 {card.trigger}
               </div>
@@ -88,8 +88,8 @@ function FlowLog({
                         </motion.div>
                       ) : entry.type === "pending" ? (
                         <div className="flex items-center gap-2 py-0.5 pl-1.5">
-                          <Loader2 className="text-foreground/20 size-3 shrink-0 animate-spin" />
-                          <span className="text-foreground/25 text-xs">{entry.label}</span>
+                          <Loader2 className="text-foreground/35 size-3 shrink-0 animate-spin" />
+                          <span className="text-foreground/40 text-xs">{entry.label}</span>
                         </div>
                       ) : (
                         <div className="flex items-center gap-2 py-0.5 pl-1.5">
@@ -102,7 +102,7 @@ function FlowLog({
                                 ? "text-red-400"
                                 : entry.success === true
                                   ? "text-emerald-500"
-                                  : "text-foreground/30",
+                                  : "text-foreground/45",
                             )}
                           >
                             {stepIcons[entry.icon]}
@@ -134,7 +134,7 @@ function FlowLog({
       </div>
 
       {cards.length === 0 && (
-        <div className="text-foreground/20 flex flex-1 items-center justify-center text-center text-sm">
+        <div className="text-foreground/35 flex flex-1 items-center justify-center text-center text-sm">
           Interact with the app to see
           <br />
           what happens behind the scenes

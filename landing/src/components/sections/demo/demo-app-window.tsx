@@ -84,7 +84,7 @@ export function DemoAppWindow({
   return (
     <WindowChrome
       label={
-        <div className="bg-foreground/[0.04] text-foreground/30 flex-1 rounded-md px-3 py-1 text-center font-mono text-[11px]">
+        <div className="bg-foreground/[0.04] text-foreground/45 flex-1 rounded-md px-3 py-1 text-center font-mono text-[11px]">
           localhost:3000
         </div>
       }
@@ -105,7 +105,7 @@ export function DemoAppWindow({
               {plan === "pro" ? "Pro" : "Free"}
             </span>
             {plan === "pro" && (
-              <span className="text-foreground/25 text-[11px]">
+              <span className="text-foreground/40 text-[11px]">
                 {downgradeScheduled ? "Ends" : "Renews"} Apr 28, 2026
               </span>
             )}
@@ -218,9 +218,9 @@ export function DemoAppWindow({
                 <div className="bg-foreground/[0.03] text-foreground/50 max-w-[80%] self-start rounded-md px-3 py-2 text-[13px] leading-relaxed">
                   {aiState === "thinking" ? (
                     <span className="inline-flex items-center gap-1">
-                      <span className="bg-foreground/30 size-1 animate-bounce rounded-full [animation-delay:0ms]" />
-                      <span className="bg-foreground/30 size-1 animate-bounce rounded-full [animation-delay:150ms]" />
-                      <span className="bg-foreground/30 size-1 animate-bounce rounded-full [animation-delay:300ms]" />
+                      <span className="bg-foreground/45 size-1 animate-bounce rounded-full [animation-delay:0ms]" />
+                      <span className="bg-foreground/45 size-1 animate-bounce rounded-full [animation-delay:150ms]" />
+                      <span className="bg-foreground/45 size-1 animate-bounce rounded-full [animation-delay:300ms]" />
                     </span>
                   ) : (
                     <>
@@ -277,7 +277,7 @@ export function DemoAppWindow({
                   }}
                   disabled={blocked || aiState !== "idle"}
                   placeholder={blocked ? "Upgrade to continue..." : "Type a message..."}
-                  className="text-foreground placeholder:text-foreground/25 min-w-0 flex-1 bg-transparent text-[13px] outline-none disabled:opacity-40"
+                  className="text-foreground placeholder:text-foreground/40 min-w-0 flex-1 bg-transparent text-[13px] outline-none disabled:opacity-40"
                 />
               )}
               <UsageRing used={used} limit={limit} />
@@ -327,7 +327,7 @@ function PlanCard({
         <span className="text-foreground/80 text-[13px] font-semibold">{name}</span>
         <span className="text-foreground/40 text-[11px]">{price}</span>
       </div>
-      <span className="text-foreground/30 mt-0.5 text-[11px]">{limit} msg/mo</span>
+      <span className="text-foreground/45 mt-0.5 text-[11px]">{limit} msg/mo</span>
       {children}
     </div>
   );
@@ -355,14 +355,14 @@ function UsageRing({ used, limit }: { used: number; limit: number }) {
           fill="none"
           strokeWidth="2"
           strokeLinecap="round"
-          className="stroke-foreground/25 transition-all duration-300"
+          className="stroke-foreground/40 transition-all duration-300"
           style={{
             strokeDasharray: `${2 * Math.PI * 8}`,
             strokeDashoffset: `${2 * Math.PI * 8 * (1 - ratio)}`,
           }}
         />
       </svg>
-      <span className="text-foreground/25 font-mono text-[11px]">
+      <span className="text-foreground/40 font-mono text-[11px]">
         {remaining}/{limit}
       </span>
     </div>
