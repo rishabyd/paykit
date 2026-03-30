@@ -1,10 +1,10 @@
-import { Activity, Database, Plug, Shield, Webhook, Zap } from "lucide-react";
+import { Blocks, Cable, Database, Gauge, ShieldCheck, Webhook } from "lucide-react";
 
 import { Section, SectionContent } from "@/components/layout/section";
 
 const features = [
   {
-    icon: <Activity className="size-5" />,
+    icon: <Gauge className="size-5" />,
     title: "Usage billing",
     description: "Metered features with check() and report(). Zero network latency.",
   },
@@ -14,12 +14,12 @@ const features = [
     description: "Verified, deduplicated, synced to your database automatically.",
   },
   {
-    icon: <Zap className="size-5" />,
+    icon: <Cable className="size-5" />,
     title: "Any provider",
     description: "Stripe, Polar, Creem, or your own custom provider. Swap with one import.",
   },
   {
-    icon: <Plug className="size-5" />,
+    icon: <Blocks className="size-5" />,
     title: "Plugins",
     description: "Extend PayKit with dashboard, analytics, or build your own plugin.",
   },
@@ -29,7 +29,7 @@ const features = [
     description: "Billing state in your Postgres, low latency, joinable with your tables.",
   },
   {
-    icon: <Shield className="size-5" />,
+    icon: <ShieldCheck className="size-5" />,
     title: "Type-safe",
     description: "Plan IDs, feature IDs, events. All inferred from your schema.",
   },
