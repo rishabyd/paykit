@@ -1,5 +1,6 @@
 "use client";
 
+import { track } from "@vercel/analytics";
 import { Github } from "lucide-react";
 import Link from "next/link";
 
@@ -11,6 +12,13 @@ const navLinks = [
   { label: "Docs", href: "/docs" },
   { label: "Enterprise", href: "/enterprise" },
   { label: "Author", href: URLs.authorX, external: true },
+];
+
+const socialLinks = [
+  { label: "Discord", href: URLs.discord, icon: <Icons.DiscordIcon className="size-4" /> },
+  { label: "Twitter/X", href: URLs.x, icon: <Icons.XIcon className="size-3.5" /> },
+  { label: "LinkedIn", href: URLs.linkedin, icon: <Icons.LinkedInIcon className="size-3.5" /> },
+  { label: "GitHub", href: URLs.githubRepo, icon: <Github className="size-4" /> },
 ];
 
 export function FooterSection() {
@@ -26,6 +34,7 @@ export function FooterSection() {
                   target={link.external ? "_blank" : undefined}
                   rel={link.external ? "noopener noreferrer" : undefined}
                   className="text-foreground/45 hover:text-foreground/70 font-mono text-xs transition-colors"
+                  onClick={() => track("nav_clicked", { link: link.label, location: "footer" })}
                 >
                   {link.label}
                 </Link>
@@ -37,42 +46,21 @@ export function FooterSection() {
           </div>
 
           <div className="flex items-center gap-3">
-            <Link
-              href={URLs.discord}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Discord"
-              className="text-foreground/30 hover:text-foreground/60 transition-colors"
-            >
-              <Icons.DiscordIcon className="size-4" />
-            </Link>
-            <Link
-              href={URLs.x}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Twitter/X"
-              className="text-foreground/30 hover:text-foreground/60 transition-colors"
-            >
-              <Icons.XIcon className="size-3.5" />
-            </Link>
-            <Link
-              href={URLs.linkedin}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="LinkedIn"
-              className="text-foreground/30 hover:text-foreground/60 transition-colors"
-            >
-              <Icons.LinkedInIcon className="size-3.5" />
-            </Link>
-            <Link
-              href={URLs.githubRepo}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="GitHub"
-              className="text-foreground/30 hover:text-foreground/60 transition-colors"
-            >
-              <Github className="size-4" />
-            </Link>
+            {socialLinks.map((link) => (
+              <Link
+                key={link.label}
+                href={link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={link.label}
+                className="text-foreground/30 hover:text-foreground/60 transition-colors"
+                onClick={() =>
+                  track("social_clicked", { platform: link.label, location: "footer" })
+                }
+              >
+                {link.icon}
+              </Link>
+            ))}
             <span className="text-foreground/15 select-none">·</span>
             <span className="text-foreground/45 dark:text-foreground/30 font-mono text-xs">
               © {new Date().getFullYear()} PayKit

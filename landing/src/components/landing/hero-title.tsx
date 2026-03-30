@@ -1,5 +1,6 @@
 "use client";
 
+import { track } from "@vercel/analytics";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronRight, Copy, Sparkle } from "lucide-react";
 import Link from "next/link";
@@ -14,13 +15,12 @@ export function HeroTitle() {
   const handleCopy = useCallback(() => {
     void navigator.clipboard.writeText("npx paykitjs init");
     setCopied(true);
+    track("cta_clicked", { button: "copy_init_command", page: "home" });
     setTimeout(() => setCopied(false), 1500);
   }, []);
 
   return (
-    <div
-      className="relative flex w-full flex-col items-center text-center lg:items-start lg:text-left"
-    >
+    <div className="relative flex w-full flex-col items-center text-center lg:items-start lg:text-left">
       <div className="space-y-2.5 sm:space-y-4">
         <div className="flex items-center justify-center gap-1.5 lg:justify-start">
           <Sparkle
@@ -48,6 +48,7 @@ export function HeroTitle() {
             size="lg"
             className="px-4 h-9.5"
             variant="default"
+            onClick={() => track("cta_clicked", { button: "read_docs", page: "home" })}
           >
             Read Docs
           </Button>

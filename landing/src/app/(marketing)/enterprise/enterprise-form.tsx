@@ -1,5 +1,6 @@
 "use client";
 
+import { track } from "@vercel/analytics";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Loader2 } from "lucide-react";
 import { useActionState } from "react";
@@ -13,8 +14,10 @@ import { submitEnterpriseForm } from "./actions";
 
 export function EnterpriseForm() {
   const [state, formAction, pending] = useActionState(
-    async (_prev: { success?: boolean; error?: string } | null, formData: FormData) =>
-      submitEnterpriseForm(formData),
+    async (_prev: { success?: boolean; error?: string } | null, formData: FormData) => {
+      track("form_submitted", { form: "enterprise_contact" });
+      return submitEnterpriseForm(formData);
+    },
     null,
   );
 
