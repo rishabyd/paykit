@@ -23,7 +23,8 @@ export function dash(options?: DashPluginOptions): PayKitPlugin {
           }
         }
 
-        return new Response(getDashboardHTML(), {
+        const basePath = ctx.context.options.basePath ?? "/paykit";
+        return new Response(getDashboardHTML(basePath), {
           headers: { "Content-Type": "text/html; charset=utf-8" },
         });
       }),
