@@ -39,6 +39,14 @@ export function FeaturesSection() {
   return (
     <Section>
       <SectionContent>
+        <div className="mb-10 max-w-lg space-y-2">
+          <h2 className="text-foreground/90 text-xl font-semibold tracking-tight sm:text-2xl">
+            Features
+          </h2>
+          <p className="text-foreground/45 text-sm leading-relaxed sm:text-base">
+            Everything you need to add billing to your app. Nothing you don't.
+          </p>
+        </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((feature) => (
             <div
