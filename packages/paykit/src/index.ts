@@ -51,6 +51,8 @@ export type {
   WebhookApplyAction,
 } from "./types/events";
 
+export type { PayKitPlugin } from "./types/plugin";
+
 export { PayKitError } from "./core/errors";
 export { feature, plan } from "./types/schema";
 export { createPayKitEndpoint } from "./api/call";

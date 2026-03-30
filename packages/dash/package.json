@@ -1,0 +1,20 @@
+{
+  "name": "@paykitjs/dash",
+  "version": "0.1.0",
+  "description": "Embedded dashboard plugin for PayKit",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getpaykit/paykit.git"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "paykitjs": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}

@@ -1,4 +1,4 @@
-import pg from "pg";
+import { Pool } from "pg";
 
 import { createDatabase, type PayKitDatabase } from "../database/index";
 import type { StripeProviderConfig, StripeRuntime } from "../providers/provider";
@@ -33,7 +33,7 @@ export async function createContext(options: PayKitOptions): Promise<PayKitConte
 
   const pool =
     typeof options.database === "string"
-      ? new pg.Pool({ connectionString: options.database })
+      ? new Pool({ connectionString: options.database })
       : options.database;
   const database = await createDatabase(pool);
   const stripe = options.provider.runtime ?? createStripeRuntime(options.provider);

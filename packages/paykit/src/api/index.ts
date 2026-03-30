@@ -29,11 +29,19 @@ export function getEndpoints(ctx: PayKitContext | Promise<PayKitContext>) {
 }
 
 export function createPayKitRouter(ctx: PayKitContext, options: PayKitOptions) {
-  return createRouter(endpoints, {
-    basePath: options.basePath ?? "/paykit/api",
-    routerContext: ctx,
-    onError(e) {
-      ctx.logger.error("API error:", e);
+  const pluginEndpoints = Object.assign(
+    {},
+    ...(options.plugins ?? []).map((p) => p.endpoints ?? {}),
+  );
+
+  return createRouter(
+    { ...endpoints, ...pluginEndpoints },
+    {
+      basePath: options.basePath ?? "/paykit/api",
+      routerContext: ctx,
+      onError(e) {
+        ctx.logger.error("API error:", e);
+      },
     },
-  });
+  );
 }

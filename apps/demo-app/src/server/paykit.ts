@@ -1,3 +1,4 @@
+import { dash } from "@paykitjs/dash";
 import { stripe } from "@paykitjs/stripe";
 import { createPayKit } from "paykitjs";
 
@@ -13,6 +14,14 @@ export const paykit = createPayKit({
     webhookSecret: env.STRIPE_WEBHOOK_SECRET,
   }),
   plans,
+  plugins: [
+    dash({
+      // authorize: async (request) => {
+      //   const session = await auth.api.getSession({ headers: request.headers });
+      //   if (!session) throw new Error("Not authenticated");
+      // },
+    }),
+  ],
   client: {
     identify: async (request) => {
       const session = await auth.api.getSession({ headers: request.headers });
