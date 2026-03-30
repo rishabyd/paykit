@@ -33,14 +33,14 @@ export const paykit = createPayKit({
   }),
   database: env.DATABASE_URL,
   plans: [free, pro],
+  plugins: [
+    dashboard(),
+  ],
   on: {
     "plan.activated": ({ customer, plan }) => {
       await sendEmail(customer.email, "Welcome to Pro!")
     },
-  },
-  plugins: [
-    dashboard() // custom plugins
-  ]
+  }
 })
 `;
 
