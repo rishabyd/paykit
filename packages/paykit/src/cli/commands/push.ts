@@ -32,21 +32,21 @@ async function pushAction(options: { config?: string; cwd: string; yes?: boolean
         `  Stripe   ${picocolors.dim("·")} ${stripeAccount.displayName} (${stripeAccount.mode})`,
     );
 
-    // Dry-run: check what needs to change
+    // 1. Apply pending migrations first — schema must exist before querying products
     const pendingMigrations = await getPendingMigrationCount(config.options.database);
-    const ctx = await createContext(config.options);
-    const planDiffs = await dryRunSyncProducts(ctx);
 
-    const hasChanges = pendingMigrations > 0 || planDiffs.some((d) => d.action !== "unchanged");
-
-    // Schema section
     if (pendingMigrations > 0) {
-      p.log.step(
-        `${String(pendingMigrations)} pending migration${pendingMigrations === 1 ? "" : "s"}`,
-      );
+      await migrateDatabase(config.options.database);
+      p.log.success(`Schema ${picocolors.dim("·")} migrated`);
     } else {
       p.log.step(`Schema ${picocolors.dim("·")} up to date`);
     }
+
+    // 2. Dry-run product sync (safe — schema is guaranteed to exist now)
+    const ctx = await createContext(config.options);
+    const planDiffs = await dryRunSyncProducts(ctx);
+
+    const hasPlanChanges = planDiffs.some((d) => d.action !== "unchanged");
 
     // Plan changes section
     if (planDiffs.length > 0) {
@@ -58,40 +58,28 @@ async function pushAction(options: { config?: string; cwd: string; yes?: boolean
       p.log.step(`Plan changes\n${planLines.join("\n")}`);
     }
 
-    if (!hasChanges) {
+    if (!hasPlanChanges && pendingMigrations === 0) {
       p.outro("Nothing to do");
       return;
     }
 
-    // Confirmation prompt
-    if (!options.yes) {
-      const shouldContinue = await p.confirm({ message: "Apply changes?" });
+    // Confirmation prompt (for plan sync — migrations already applied)
+    if (hasPlanChanges && !options.yes) {
+      const shouldContinue = await p.confirm({ message: "Sync plans?" });
       if (p.isCancel(shouldContinue) || !shouldContinue) {
         p.cancel("Aborted");
         process.exit(0);
       }
     }
 
-    // Execute
-    if (pendingMigrations > 0) {
-      await migrateDatabase(config.options.database);
-      p.log.success("Schema migrated");
-    }
-
+    // Execute plan sync
     const results = await syncProducts(ctx);
     const syncedCount = results.filter((r) => r.action !== "unchanged").length;
     if (syncedCount > 0) {
       p.log.success("Plans synced");
     }
 
-    // Summary
-    const parts: string[] = [];
-    if (pendingMigrations > 0) {
-      parts.push(`${String(pendingMigrations)} migration${pendingMigrations === 1 ? "" : "s"}`);
-    }
-    parts.push(`${String(results.length)} plan${results.length === 1 ? "" : "s"} synced`);
-
-    p.outro(`Done ${picocolors.dim("·")} ${parts.join(", ")}`);
+    p.outro(`Done ${picocolors.dim("·")} ${String(results.length)} plan${results.length === 1 ? "" : "s"} synced`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     p.log.error(message);

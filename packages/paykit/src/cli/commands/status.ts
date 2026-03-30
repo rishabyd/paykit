@@ -64,7 +64,7 @@ async function statusAction(options: { config?: string; cwd: string }): Promise<
 
   const migrationStatus =
     pendingMigrations > 0
-      ? `${picocolors.red("✖")} ${String(pendingMigrations)} pending migration${pendingMigrations === 1 ? "" : "s"}`
+      ? `${picocolors.red("✖")} Schema needs migration`
       : `${picocolors.green("✔")} Schema up to date`;
 
   p.log.info(`Database\n  ${picocolors.green("✔")} ${connStr}\n  ${migrationStatus}`);
@@ -95,8 +95,12 @@ async function statusAction(options: { config?: string; cwd: string }): Promise<
       `  ${webhookStatus}`,
   );
 
-  // Products section
-  try {
+  // Products section — skip when migrations are pending (tables may not exist)
+  if (pendingMigrations > 0) {
+    p.log.info(
+      `Products\n  ${picocolors.dim("?")} Cannot check sync status until migrations are applied`,
+    );
+  } else {
     const ctx = await createContext(config.options);
     const diffs = await dryRunSyncProducts(ctx);
 
@@ -116,16 +120,11 @@ async function statusAction(options: { config?: string; cwd: string }): Promise<
 
       p.log.info(`Products\n  ${header}\n${planLines.join("\n")}`);
     }
-  } catch {
-    p.log.error(
-      `Products\n  ${picocolors.red("✖")} Could not check sync status (run migrations first)`,
-    );
   }
 
   // Final
-  const hasIssues = pendingMigrations > 0;
-  if (hasIssues) {
-    p.outro(`Run ${picocolors.bold("paykitjs push")} to get started`);
+  if (pendingMigrations > 0) {
+    p.outro(`Run ${picocolors.bold("paykitjs push")} to apply migrations and sync plans`);
   } else {
     p.outro("Everything looks good");
   }

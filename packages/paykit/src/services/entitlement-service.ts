@@ -44,8 +44,17 @@ function addResetInterval(date: Date, resetInterval: string): Date {
   const next = new Date(date);
   if (resetInterval === "day") next.setUTCDate(next.getUTCDate() + 1);
   if (resetInterval === "week") next.setUTCDate(next.getUTCDate() + 7);
-  if (resetInterval === "month") next.setUTCMonth(next.getUTCMonth() + 1);
-  if (resetInterval === "year") next.setUTCFullYear(next.getUTCFullYear() + 1);
+  if (resetInterval === "month") {
+    const day = next.getUTCDate();
+    next.setUTCMonth(next.getUTCMonth() + 1);
+    // Clamp: if day overflowed (e.g. Jan 31 → Mar 3), go to last day of target month
+    if (next.getUTCDate() !== day) next.setUTCDate(0);
+  }
+  if (resetInterval === "year") {
+    const day = next.getUTCDate();
+    next.setUTCFullYear(next.getUTCFullYear() + 1);
+    if (next.getUTCDate() !== day) next.setUTCDate(0);
+  }
   return next;
 }
 
