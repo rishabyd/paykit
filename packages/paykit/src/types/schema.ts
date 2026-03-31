@@ -381,7 +381,7 @@ export function normalizeSchema(plans: PayKitPlansModule | undefined): Normalize
     plansById.set(exportedPlan.id, {
       group,
       id: exportedPlan.id,
-      includes: includes.toSorted((left, right) => left.id.localeCompare(right.id)),
+      includes: [...includes].sort((left, right) => left.id.localeCompare(right.id)),
       isDefault,
       name: exportedPlan.name ?? deriveNameFromId(exportedPlan.id),
       priceAmount: exportedPlan.price ? Math.round(exportedPlan.price.amount * 100) : null,
@@ -391,7 +391,7 @@ export function normalizeSchema(plans: PayKitPlansModule | undefined): Normalize
   }
 
   return {
-    features: [...features.values()].toSorted((left, right) => left.id.localeCompare(right.id)),
-    plans: [...plansById.values()].toSorted((left, right) => left.id.localeCompare(right.id)),
+    features: [...features.values()].sort((left, right) => left.id.localeCompare(right.id)),
+    plans: [...plansById.values()].sort((left, right) => left.id.localeCompare(right.id)),
   };
 }

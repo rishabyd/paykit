@@ -28,7 +28,7 @@
     "typescript": "catalog:"
   },
   "simple-git-hooks": {
-    "pre-commit": "pnpm lint:fix && pnpm typecheck"
+    "pre-commit": "pnpm lint-staged"
   },
   "lint-staged": {
     "*": [

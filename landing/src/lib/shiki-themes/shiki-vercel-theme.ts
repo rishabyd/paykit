@@ -1,3 +1,6 @@
+// NOTE: This theme is intentionally kept as a reference/option even though it's not
+// currently active. Do not remove. Switch to it in code-block-content.tsx if needed.
+
 import type { ThemeRegistrationRaw } from "shiki";
 
 /**
@@ -96,7 +99,7 @@ const vercelDark: ThemeRegistrationRaw = {
     },
     {
       scope: ["constant.numeric", "constant.numeric.decimal"],
-      settings: { foreground: "#ffffff" },
+      settings: { foreground: "#47a8ff" },
     },
     {
       scope: ["support.variable.property", "variable.other.property"],

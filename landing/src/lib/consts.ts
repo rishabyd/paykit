@@ -2,9 +2,15 @@ import type { FAQPage, Organization, SoftwareApplication, WebSite, WithContext }
 
 export const OG_IMAGE_PATH = "/og.png";
 export const SITE_NAME = "PayKit";
-export const SITE_TITLE = "PayKit – Open-source payment orchestration for TypeScript";
+
+export const SITE_TITLE = "PayKit – The first billing framework for TypeScript";
 export const SITE_DESCRIPTION =
-  "Open-source TypeScript payment toolkit that unifies multiple payment providers behind a single, extensible API.";
+  "Open-source billing framework for TypeScript. Define plans in code. Handles Stripe, webhooks, and subscriptions automatically. Runs inside your app.";
+
+export const OG_TITLE = SITE_TITLE;
+export const OG_DESCRIPTION =
+  "Define plans and features in code. Handles Stripe, webhooks, and usage state. Runs inside your app, writes to your database. Open source.";
+
 export const URLs = {
   site: "https://paykit.sh",
   githubOrg: "https://github.com/getpaykit",
@@ -12,7 +18,7 @@ export const URLs = {
   roadmap: "https://github.com/orgs/getpaykit/projects/1",
   x: "https://x.com/getpaykit",
   linkedin: "https://www.linkedin.com/company/getpaykit",
-  discord: "https://discord.gg/paykit",
+  discord: "https://discord.gg/C6yGFp94",
   authorGitHub: "https://github.com/maxktz",
   authorX: "https://x.com/maxk4tz",
 } as const;
@@ -58,24 +64,7 @@ export const faqSchema: WithContext<FAQPage> = {
   "@context": "https://schema.org",
   "@type": "FAQPage",
   "@id": `${URLs.site}/#faq`,
-  mainEntity: [
-    {
-      "@type": "Question",
-      name: "What is PayKit?",
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: "PayKit is an open-source payment orchestration framework for TypeScript apps.",
-      },
-    },
-    {
-      "@type": "Question",
-      name: "Does PayKit process payments?",
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: "No. PayKit orchestrates providers behind one API and does not process payments itself.",
-      },
-    },
-  ],
+  mainEntity: [],
 };
 
 export const homePageStructuredData = [

@@ -49,8 +49,17 @@ function addResetInterval(date: Date, resetInterval: string): Date {
   const next = new Date(date);
   if (resetInterval === "day") next.setUTCDate(next.getUTCDate() + 1);
   if (resetInterval === "week") next.setUTCDate(next.getUTCDate() + 7);
-  if (resetInterval === "month") next.setUTCMonth(next.getUTCMonth() + 1);
-  if (resetInterval === "year") next.setUTCFullYear(next.getUTCFullYear() + 1);
+  if (resetInterval === "month") {
+    const day = next.getUTCDate();
+    next.setUTCMonth(next.getUTCMonth() + 1);
+    // Clamp: if day overflowed (e.g. Jan 31 → Mar 3), go to last day of target month
+    if (next.getUTCDate() !== day) next.setUTCDate(0);
+  }
+  if (resetInterval === "year") {
+    const day = next.getUTCDate();
+    next.setUTCFullYear(next.getUTCFullYear() + 1);
+    if (next.getUTCDate() !== day) next.setUTCDate(0);
+  }
   return next;
 }
 
@@ -296,12 +305,26 @@ export async function beginWebhookEvent(
     });
     return true;
   } catch (error: unknown) {
-    // Unique constraint violation (duplicate event) → already processed
+    // Unique constraint violation (duplicate event)
     const code = (error as { code?: string }).code;
-    if (code === "23505") {
-      return false;
+    if (code !== "23505") {
+      throw error;
     }
-    throw error;
+
+    // Allow retry of previously failed events by resetting to "processing"
+    const retried = await database
+      .update(webhookEvent)
+      .set({ error: null, processedAt: null, status: "processing" })
+      .where(
+        and(
+          eq(webhookEvent.providerId, input.providerId),
+          eq(webhookEvent.providerEventId, input.providerEventId),
+          eq(webhookEvent.status, "failed"),
+        ),
+      )
+      .returning({ id: webhookEvent.id });
+
+    return retried.length > 0;
   }
 }
 
@@ -338,49 +361,22 @@ export async function upsertSubscriptionRecord(
     subscription: ProviderSubscription | NormalizedSubscription;
   },
 ): Promise<StoredSubscription> {
-  const existing = await getSubscriptionByProviderId(database, {
-    providerId: input.providerId,
-    providerSubscriptionId: input.subscription.providerSubscriptionId,
-  });
   const now = new Date();
   const values = {
     cancelAtPeriodEnd: input.subscription.cancelAtPeriodEnd,
-    canceledAt:
-      input.subscription.canceledAt !== undefined
-        ? (input.subscription.canceledAt ?? null)
-        : (existing?.canceledAt ?? null),
-    currentPeriodEndAt:
-      input.subscription.currentPeriodEndAt !== undefined
-        ? (input.subscription.currentPeriodEndAt ?? null)
-        : (existing?.currentPeriodEndAt ?? null),
-    currentPeriodStartAt:
-      input.subscription.currentPeriodStartAt !== undefined
-        ? (input.subscription.currentPeriodStartAt ?? null)
-        : (existing?.currentPeriodStartAt ?? null),
+    canceledAt: input.subscription.canceledAt ?? null,
+    currentPeriodEndAt: input.subscription.currentPeriodEndAt ?? null,
+    currentPeriodStartAt: input.subscription.currentPeriodStartAt ?? null,
     customerId: input.customerId,
     customerProductId: input.customerProductId ?? null,
-    endedAt:
-      input.subscription.endedAt !== undefined
-        ? (input.subscription.endedAt ?? null)
-        : (existing?.endedAt ?? null),
+    endedAt: input.subscription.endedAt ?? null,
     providerId: input.providerId,
     providerSubscriptionId: input.subscription.providerSubscriptionId,
     providerSubscriptionScheduleId:
-      input.subscription.providerSubscriptionScheduleId !== undefined
-        ? (input.subscription.providerSubscriptionScheduleId ?? null)
-        : (existing?.providerSubscriptionScheduleId ?? null),
+      input.subscription.providerSubscriptionScheduleId ?? null,
     status: input.subscription.status,
     updatedAt: now,
   };
-
-  if (existing) {
-    const rows = await database
-      .update(subscription)
-      .set(values)
-      .where(eq(subscription.id, existing.id))
-      .returning();
-    return rows[0] ?? existing;
-  }
 
   const rows = await database
     .insert(subscription)
@@ -389,10 +385,37 @@ export async function upsertSubscriptionRecord(
       createdAt: now,
       id: generateId("sub"),
     })
+    .onConflictDoUpdate({
+      target: [subscription.providerId, subscription.providerSubscriptionId],
+      set: {
+        ...values,
+        // Preserve fields that weren't explicitly provided in the input
+        canceledAt:
+          input.subscription.canceledAt !== undefined
+            ? (input.subscription.canceledAt ?? null)
+            : sql`${subscription.canceledAt}`,
+        currentPeriodEndAt:
+          input.subscription.currentPeriodEndAt !== undefined
+            ? (input.subscription.currentPeriodEndAt ?? null)
+            : sql`${subscription.currentPeriodEndAt}`,
+        currentPeriodStartAt:
+          input.subscription.currentPeriodStartAt !== undefined
+            ? (input.subscription.currentPeriodStartAt ?? null)
+            : sql`${subscription.currentPeriodStartAt}`,
+        endedAt:
+          input.subscription.endedAt !== undefined
+            ? (input.subscription.endedAt ?? null)
+            : sql`${subscription.endedAt}`,
+        providerSubscriptionScheduleId:
+          input.subscription.providerSubscriptionScheduleId !== undefined
+            ? (input.subscription.providerSubscriptionScheduleId ?? null)
+            : sql`${subscription.providerSubscriptionScheduleId}`,
+      },
+    })
     .returning();
   const row = rows[0];
   if (!row) {
-    throw new Error("Failed to create subscription.");
+    throw new Error("Failed to upsert subscription.");
   }
   return row;
 }
@@ -406,12 +429,6 @@ export async function upsertInvoiceRecord(
     invoice: ProviderInvoice | NormalizedInvoice;
   },
 ): Promise<StoredInvoice> {
-  const existing = await database.query.invoice.findFirst({
-    where: and(
-      eq(invoice.providerId, input.providerId),
-      eq(invoice.providerInvoiceId, input.invoice.providerInvoiceId),
-    ),
-  });
   const now = new Date();
   const values = {
     currency: input.invoice.currency,
@@ -427,15 +444,6 @@ export async function upsertInvoiceRecord(
     updatedAt: now,
   };
 
-  if (existing) {
-    const rows = await database
-      .update(invoice)
-      .set(values)
-      .where(eq(invoice.id, existing.id))
-      .returning();
-    return rows[0] ?? existing;
-  }
-
   const rows = await database
     .insert(invoice)
     .values({
@@ -443,10 +451,14 @@ export async function upsertInvoiceRecord(
       createdAt: now,
       id: generateId("inv"),
     })
+    .onConflictDoUpdate({
+      target: [invoice.providerId, invoice.providerInvoiceId],
+      set: values,
+    })
     .returning();
   const row = rows[0];
   if (!row) {
-    throw new Error("Failed to create invoice.");
+    throw new Error("Failed to upsert invoice.");
   }
   return row;
 }
@@ -534,7 +546,7 @@ export async function insertCustomerProductRecord(
 export async function endCustomerProducts(
   database: PayKitDatabase,
   customerProductIds: readonly string[],
-  input: { canceled?: boolean; endedAt?: Date | null; status: string },
+  input: { canceled?: boolean; canceledAt?: Date | null; endedAt?: Date | null; status: string },
 ): Promise<void> {
   if (customerProductIds.length === 0) {
     return;
@@ -544,7 +556,7 @@ export async function endCustomerProducts(
     .update(customerProduct)
     .set({
       canceled: input.canceled ?? false,
-      canceledAt: input.canceled ? new Date() : null,
+      canceledAt: input.canceledAt ?? (input.canceled ? new Date() : null),
       endedAt: input.endedAt ?? new Date(),
       status: input.status,
       updatedAt: new Date(),

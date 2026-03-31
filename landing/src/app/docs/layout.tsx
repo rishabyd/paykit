@@ -159,19 +159,20 @@ export default function Layout({ children }: { children: ReactNode }) {
           footer: (
             <div className="flex w-full items-center justify-between gap-2">
               <Button
-                asChild
+                render={
+                  <a
+                    href={URLs.githubRepo}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="GitHub repository"
+                  />
+                }
+                nativeButton={false}
                 variant="ghost"
                 size="icon"
                 className="docs-sidebar-github-button text-fd-muted-foreground hover:text-fd-accent-foreground"
               >
-                <a
-                  href={URLs.githubRepo}
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-label="GitHub repository"
-                >
-                  <Github className="size-4.5" aria-hidden="true" />
-                </a>
+                <Github className="size-4.5" aria-hidden="true" />
               </Button>
               <ThemeSwitcher />
             </div>
@@ -184,7 +185,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               <LogoLockup className="h-4.5" />
               {VERSION_TEXT && (
                 <Badge
-                  className="text-muted-foreground mb-0.5 ml-3 rounded-xs px-1"
+                  className="text-muted-foreground mb-0.5 ml-3 rounded-md px-1"
                   variant={"outline"}
                 >
                   {VERSION_TEXT}

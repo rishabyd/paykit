@@ -74,11 +74,9 @@ export default function NotFound() {
           </motion.p>
 
           <motion.div variants={item} className="pt-2">
-            <Button className="rounded-none" asChild>
-              <Link href="/">
-                <ArrowLeft />
-                Go home
-              </Link>
+            <Button size="lg" render={<Link href="/" />} nativeButton={false}>
+              <ArrowLeft />
+              Go home
             </Button>
           </motion.div>
         </motion.div>

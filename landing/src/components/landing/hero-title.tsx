@@ -1,33 +1,29 @@
 "use client";
 
+import { track } from "@vercel/analytics";
 import { AnimatePresence, motion } from "framer-motion";
-import { Github, Sparkle } from "lucide-react";
-import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Check, ChevronRight, Copy, Sparkle } from "lucide-react";
+import { useCallback, useState } from "react";
 
-import { URLs } from "@/lib/consts";
-
-const rotatingWords = ["TypeScript", "modern SaaS", "Next.js apps"];
+import { useComingSoon } from "../coming-soon-dialog";
+import { Button } from "../ui/button";
 
 export function HeroTitle() {
-  const [wordIndex, setWordIndex] = useState(0);
+  const showComingSoon = useComingSoon();
+  const [copied, setCopied] = useState(false);
+  const [hovered, setHovered] = useState(false);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setWordIndex((i) => (i + 1) % rotatingWords.length);
-    }, 2500);
-    return () => clearInterval(interval);
+  const handleCopy = useCallback(() => {
+    void navigator.clipboard.writeText("npx paykitjs init");
+    setCopied(true);
+    track("cta_clicked", { button: "copy_init_command", page: "home" });
+    setTimeout(() => setCopied(false), 1500);
   }, []);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: "easeOut" }}
-      className="relative flex w-full flex-col items-center px-5 pt-14 pb-0 text-center sm:px-6 sm:pt-18 md:pt-24 lg:px-7 lg:pt-32"
-    >
-      <div className="space-y-2 sm:space-y-1">
-        <div className="flex items-center justify-center gap-1.5">
+    <div className="relative flex w-full flex-col items-center text-center lg:items-start lg:text-left">
+      <div className="space-y-2.5 sm:space-y-4">
+        <div className="flex items-center justify-center gap-1.5 lg:justify-start">
           <Sparkle
             className="size-[0.9em] text-neutral-600 dark:text-neutral-100"
             aria-hidden="true"
@@ -36,49 +32,47 @@ export function HeroTitle() {
             Own your payments
           </span>
         </div>
-        <h1 className="max-w-4xl text-xl leading-tight tracking-tight text-neutral-800 sm:text-2xl md:text-3xl lg:text-4xl xl:text-5xl dark:text-neutral-200">
-          Open-source payment orchestration for{" "}
-          <span className="relative inline-flex overflow-hidden align-bottom">
-            <AnimatePresence mode="wait">
-              <motion.span
-                key={rotatingWords[wordIndex]}
-                initial={{ y: "100%", opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: "-100%", opacity: 0 }}
-                transition={{ duration: 0.3, ease: "easeInOut" }}
-                className="border-foreground/20 inline-block border-b border-dashed"
-              >
-                {rotatingWords[wordIndex]}
-              </motion.span>
-            </AnimatePresence>
-          </span>
+        <h1 className="max-w-4xl text-3xl leading-tight tracking-tight text-neutral-800 sm:text-3xl md:text-3xl lg:text-[2.5rem] dark:text-neutral-200">
+          The first billing framework <br />
+          for <span className="border-foreground/20 border-b border-dashed">TypeScript</span>
         </h1>
 
-        {/* CTA Buttons */}
-        <div className="flex flex-wrap items-center justify-center gap-2 pt-3 sm:gap-3 sm:pt-4 lg:mt-5">
-          <Link
-            href="/docs"
-            className="inline-flex items-center gap-1.5 bg-neutral-900 px-4 py-2 text-xs font-medium text-neutral-100 transition-colors hover:opacity-90 sm:px-5 sm:text-sm dark:bg-neutral-100 dark:text-neutral-900"
+        <p className="text-foreground/50 max-w-md text-[13px] leading-relaxed sm:text-base">
+          Define plans and features in code. PayKit handles Stripe, webhooks, and usage state - runs
+          inside your app.
+        </p>
+
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3 sm:mt-8 sm:gap-4 lg:mt-12 lg:justify-start">
+          <Button
+            size="lg"
+            className="px-4 h-9.5"
+            variant="default"
+            onClick={() => {
+              track("cta_clicked", { button: "read_docs", page: "home" });
+              showComingSoon();
+            }}
           >
             Read Docs
-          </Link>
-          <a
-            href={URLs.githubRepo}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group dark:text-foreground/75 hover:dark:text-foreground/90 relative inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-neutral-600 transition-colors sm:px-5 sm:text-sm"
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={handleCopy}
+            size="lg"
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
+            className="group relative gap-1.5 rounded-none border-transparent pr-3.5 h-9.5 text-xs font-medium text-neutral-600 hover:bg-transparent sm:text-sm dark:text-neutral-400 dark:text-foreground/75 dark:hover:bg-transparent"
           >
             {/* Diagonal lines background */}
             <span
               className="absolute inset-0 opacity-[0.13] transition-opacity group-hover:opacity-[0.18]"
               style={{
                 backgroundImage: `repeating-linear-gradient(
-                  -45deg,
-                  transparent,
-                  transparent 4px,
-                  currentColor 4px,
-                  currentColor 5px
-                )`,
+                    -45deg,
+                    transparent,
+                    transparent 4px,
+                    currentColor 4px,
+                    currentColor 5px
+                  )`,
               }}
             />
             {/* Top border */}
@@ -89,11 +83,48 @@ export function HeroTitle() {
             <span className="bg-foreground/22 group-hover:bg-foreground/30 absolute -top-[6px] -bottom-[6px] left-0 w-px transition-colors" />
             {/* Right border */}
             <span className="bg-foreground/22 group-hover:bg-foreground/30 absolute -top-[6px] right-0 -bottom-[6px] w-px transition-colors" />
-            <Github className="relative size-4" />
-            <span className="relative">View on GitHub</span>
-          </a>
+            <span className="relative flex size-4.5 items-center justify-center">
+              <AnimatePresence mode="wait">
+                {copied ? (
+                  <motion.span
+                    key="check"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute flex items-center justify-center"
+                  >
+                    <Check className="text-foreground/50 size-3.5" />
+                  </motion.span>
+                ) : hovered ? (
+                  <motion.span
+                    key="copy"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute flex items-center justify-center"
+                  >
+                    <Copy className="text-foreground/50 size-3.5" />
+                  </motion.span>
+                ) : (
+                  <motion.span
+                    key="chevron"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute flex items-center justify-center"
+                  >
+                    <ChevronRight className="text-foreground/30 size-4.5" />
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </span>
+            <code className="text-foreground/90 relative font-mono">npx paykitjs init</code>
+          </Button>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
