@@ -1,4 +1,5 @@
 import type { PayKitContext } from "../core/context";
+import { runWithTrace } from "../core/trace";
 import type { ProviderSubscription } from "../providers/provider";
 import type {
   BillingPlan,
@@ -81,11 +82,36 @@ export async function subscribeToPlan(
   ctx: PayKitContext,
   input: SubscribeInput,
 ): Promise<SubscribeResult> {
-  const subCtx = await setupSubscribeContext(ctx, input);
-  const paykitPlan = computeBillingPlan(subCtx);
-  const stripePlan = evaluateStripePlan(subCtx, paykitPlan);
-  const billingPlan: BillingPlan = { paykit: paykitPlan, stripe: stripePlan };
-  return executeBillingPlan(ctx, subCtx, billingPlan);
+  return runWithTrace("sub", async () => {
+    const startTime = Date.now();
+    ctx.logger.info(`subscribe started: planId=${input.planId} customerId=${input.customerId}`);
+
+    const subCtx = await setupSubscribeContext(ctx, input);
+    const paykitPlan = computeBillingPlan(subCtx);
+
+    const action =
+      paykitPlan.updateProduct?.status === "ended"
+        ? "switch"
+        : paykitPlan.updateProduct?.canceled
+          ? subCtx.isFreeTarget
+            ? "cancel-to-free"
+            : "downgrade"
+          : paykitPlan.insertProducts.length > 0 && !paykitPlan.updateProduct
+            ? "new"
+            : subCtx.isUpgrade
+              ? "upgrade"
+              : "resume";
+    ctx.logger.info(`subscribe plan computed: ${action}`);
+
+    const stripePlan = evaluateStripePlan(subCtx, paykitPlan);
+    const billingPlan: BillingPlan = { paykit: paykitPlan, stripe: stripePlan };
+    const result = await executeBillingPlan(ctx, subCtx, billingPlan);
+
+    const duration = Date.now() - startTime;
+    ctx.logger.info(`subscribe completed: ${action} (${String(duration)}ms)`);
+
+    return result;
+  });
 }
 
 // ---------------------------------------------------------------------------

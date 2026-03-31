@@ -360,6 +360,7 @@ export const webhookEvent = pgTable(
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
     status: text("status").notNull(),
     error: text("error"),
+    traceId: text("trace_id"),
     receivedAt: timestamp("received_at").notNull(),
     processedAt: timestamp("processed_at"),
   },

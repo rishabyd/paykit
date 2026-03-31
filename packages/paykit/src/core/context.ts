@@ -5,13 +5,7 @@ import type { StripeProviderConfig, StripeRuntime } from "../providers/provider"
 import { createStripeRuntime } from "../providers/stripe";
 import type { PayKitLogger, PayKitOptions } from "../types/options";
 import { normalizeSchema, type NormalizedSchema } from "../types/schema";
-
-const noopLogger = {
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-};
+import { createPayKitLogger } from "./logger";
 
 export interface PayKitContext {
   options: PayKitOptions;
@@ -44,6 +38,6 @@ export async function createContext(options: PayKitOptions): Promise<PayKitConte
     provider: options.provider,
     stripe,
     plans: normalizeSchema(options.plans),
-    logger: options.logger ?? noopLogger,
+    logger: createPayKitLogger(options.logger),
   };
 }

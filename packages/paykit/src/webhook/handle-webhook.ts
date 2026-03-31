@@ -1,6 +1,7 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 
 import type { PayKitContext } from "../core/context";
+import { getTraceId, runWithTrace } from "../core/trace";
 import { customerProduct, product, subscription as subscriptionTable } from "../database/schema";
 import {
   activateScheduledCustomerProduct,
@@ -69,7 +70,7 @@ async function emitCustomerUpdated(ctx: PayKitContext, customerId: string): Prom
     });
   } catch (error) {
     // User event handlers must not poison webhook processing
-    console.error("[paykit] Error in customer.updated event handler:", error);
+    ctx.logger.error("error in customer.updated event handler:", error);
   }
 }
 
@@ -615,9 +616,10 @@ async function applyAction(ctx: PayKitContext, action: WebhookApplyAction): Prom
       : null;
 
     if (existingCustomerProduct) {
+      const effectiveEndDate = existingSubscription.currentPeriodEndAt ?? new Date();
       await endCustomerProducts(ctx.database, [existingCustomerProduct.id], {
         canceled: true,
-        endedAt: new Date(),
+        endedAt: effectiveEndDate,
         status: "canceled",
       });
 
@@ -627,16 +629,26 @@ async function applyAction(ctx: PayKitContext, action: WebhookApplyAction): Prom
       const productGroup = existingStoredProduct?.group ?? "";
 
       if (productGroup) {
+        // Use the subscription's period end as the effective date — this is
+        // when Stripe considers the subscription ended, which may differ from
+        // wall-clock time (e.g. test clocks, delayed webhook delivery).
+        const effectiveDate = existingSubscription.currentPeriodEndAt ?? new Date();
+
         await ensureScheduledDefaultPlan(ctx, {
           customerId: mapping.customerId,
           group: productGroup,
-          startsAt: new Date(),
+          startsAt: effectiveDate,
         });
 
         const activatedCustomerProductId = await activateScheduledCustomerProductForGroup(ctx, {
           customerId: mapping.customerId,
           productGroup,
           subscriptionId: null,
+          // Use the subscription's period end as the effective activation date
+          // so scheduled products are found correctly, but don't set period
+          // dates on the activated product (Free plans have no billing cycle).
+          subscriptionCurrentPeriodStartAt: effectiveDate,
+          subscriptionCurrentPeriodEndAt: null,
           subscriptionStatus: "active",
         });
 
@@ -695,80 +707,99 @@ export async function handleWebhook(
   ctx: PayKitContext,
   input: HandleWebhookInput,
 ): Promise<{ received: true }> {
-  const events = await ctx.stripe.handleWebhook({
-    body: input.body,
-    headers: input.headers,
-  });
-
-  // Find the provider event ID from any event in the batch. For checkout
-  // webhooks the synthetic sub-events come first (without providerEventId),
-  // followed by the checkout.completed event that carries the Stripe event ID.
-  let parentEventId: string | null = null;
-  for (const evt of events) {
-    const payload = evt.payload as Record<string, unknown>;
-    if (typeof payload.providerEventId === "string" && payload.providerEventId.length > 0) {
-      parentEventId = payload.providerEventId;
-      break;
-    }
-  }
-
-  for (const [index, event] of events.entries()) {
-    const providerEventId = getProviderEventId(event, index, parentEventId);
-    const shouldProcess = await beginWebhookEvent(ctx.database, {
-      payload: event.payload as Record<string, unknown>,
-      providerEventId,
-      providerId: ctx.provider.id,
-      type: event.name,
+  return runWithTrace("wh", async () => {
+    const startTime = Date.now();
+    const events = await ctx.stripe.handleWebhook({
+      body: input.body,
+      headers: input.headers,
     });
-    if (!shouldProcess) {
-      continue;
+
+    // Find the provider event ID from any event in the batch. For checkout
+    // webhooks the synthetic sub-events come first (without providerEventId),
+    // followed by the checkout.completed event that carries the Stripe event ID.
+    let parentEventId: string | null = null;
+    for (const evt of events) {
+      const payload = evt.payload as Record<string, unknown>;
+      if (typeof payload.providerEventId === "string" && payload.providerEventId.length > 0) {
+        parentEventId = payload.providerEventId;
+        break;
+      }
     }
 
-    try {
-      // Run all DB mutations inside a transaction so a mid-way crash
-      // doesn't leave partially applied state.
-      const customerIds = await ctx.database.transaction(async (tx) => {
-        const txCtx = { ...ctx, database: tx } as PayKitContext;
-        const ids = new Set<string>();
+    const traceId = getTraceId();
 
-        if (event.name === "checkout.completed") {
-          const customerId = await finalizeSubscriptionCheckout(txCtx, event);
-          if (customerId) {
-            ids.add(customerId);
-          }
-        }
+    for (const [index, event] of events.entries()) {
+      const providerEventId = getProviderEventId(event, index, parentEventId);
 
-        for (const action of event.actions ?? []) {
-          const customerId = await applyAction(txCtx, action);
-          if (customerId) {
-            ids.add(customerId);
-          }
-        }
+      ctx.logger.info(`webhook received: ${event.name}`, { providerEventId });
 
-        return ids;
+      const shouldProcess = await beginWebhookEvent(ctx.database, {
+        payload: event.payload as Record<string, unknown>,
+        providerEventId,
+        providerId: ctx.provider.id,
+        traceId,
+        type: event.name,
       });
-
-      // Emit user event handlers outside the transaction to avoid holding
-      // locks while user code runs.
-      for (const customerId of customerIds) {
-        await emitCustomerUpdated(ctx, customerId);
+      if (!shouldProcess) {
+        ctx.logger.info(`webhook skipped (duplicate): ${event.name}`, { providerEventId });
+        continue;
       }
 
-      await finishWebhookEvent(ctx.database, {
-        providerEventId,
-        providerId: ctx.provider.id,
-        status: "processed",
-      });
-    } catch (error) {
-      await finishWebhookEvent(ctx.database, {
-        error: error instanceof Error ? error.message : String(error),
-        providerEventId,
-        providerId: ctx.provider.id,
-        status: "failed",
-      });
-      throw error;
-    }
-  }
+      try {
+        // Run all DB mutations inside a transaction so a mid-way crash
+        // doesn't leave partially applied state.
+        const customerIds = await ctx.database.transaction(async (tx) => {
+          const txCtx = { ...ctx, database: tx } as PayKitContext;
+          const ids = new Set<string>();
 
-  return { received: true };
+          if (event.name === "checkout.completed") {
+            ctx.logger.info("processing checkout.completed");
+            const customerId = await finalizeSubscriptionCheckout(txCtx, event);
+            if (customerId) {
+              ids.add(customerId);
+            }
+          }
+
+          for (const action of event.actions ?? []) {
+            ctx.logger.info(`applying action: ${action.type}`);
+            const customerId = await applyAction(txCtx, action);
+            if (customerId) {
+              ids.add(customerId);
+            }
+          }
+
+          return ids;
+        });
+
+        // Emit user event handlers outside the transaction to avoid holding
+        // locks while user code runs.
+        for (const customerId of customerIds) {
+          await emitCustomerUpdated(ctx, customerId);
+        }
+
+        const duration = Date.now() - startTime;
+        ctx.logger.info(`webhook processed: ${event.name} (${String(duration)}ms)`);
+
+        await finishWebhookEvent(ctx.database, {
+          providerEventId,
+          providerId: ctx.provider.id,
+          status: "processed",
+        });
+      } catch (error) {
+        const duration = Date.now() - startTime;
+        const errorDetail = error instanceof Error ? (error.stack ?? error.message) : String(error);
+        ctx.logger.error(`webhook failed: ${event.name} (${String(duration)}ms)`, errorDetail);
+
+        await finishWebhookEvent(ctx.database, {
+          error: errorDetail,
+          providerEventId,
+          providerId: ctx.provider.id,
+          status: "failed",
+        });
+        throw error;
+      }
+    }
+
+    return { received: true };
+  });
 }
