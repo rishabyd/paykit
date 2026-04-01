@@ -11,8 +11,8 @@ export async function resolveCustomer(
   // When called from an HTTP context with identify configured, always resolve
   // the caller's identity. If an explicitCustomerId is also provided, verify
   // it matches — prevents IDOR where a caller passes another user's ID.
-  if (ctx.options.client?.identify && request) {
-    const identity = await ctx.options.client.identify(request);
+  if (ctx.options.identify && request) {
+    const identity = await ctx.options.identify(request);
 
     if (explicitCustomerId && explicitCustomerId !== identity.customerId) {
       throw new APIError("FORBIDDEN", {

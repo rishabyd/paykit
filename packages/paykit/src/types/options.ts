@@ -17,13 +17,11 @@ export interface PayKitOptions {
   provider: StripeProviderConfig;
   plans?: PayKitPlansModule;
   basePath?: string;
-  client?: {
-    identify?: (request: Request) => Promise<{
-      customerId: string;
-      email?: string;
-      name?: string;
-    }>;
-  };
+  identify?: (request: Request) => Promise<{
+    customerId: string;
+    email?: string;
+    name?: string;
+  }>;
   on?: PayKitEventHandlers;
   plugins?: PayKitPlugin[];
   logger?: PayKitLogger;

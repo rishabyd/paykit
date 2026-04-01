@@ -23,17 +23,15 @@ export const paykit = createPayKit({
       // },
     }),
   ],
-  client: {
-    identify: async (request) => {
-      const session = await auth.api.getSession({ headers: request.headers });
-      if (!session) {
-        throw new Error("Not authenticated");
-      }
-      return {
-        customerId: session.user.id,
-        email: session.user.email,
-        name: session.user.name ?? undefined,
-      };
-    },
+  identify: async (request) => {
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (!session) {
+      throw new Error("Not authenticated");
+    }
+    return {
+      customerId: session.user.id,
+      email: session.user.email,
+      name: session.user.name ?? undefined,
+    };
   },
 });
