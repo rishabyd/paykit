@@ -91,7 +91,7 @@ const mobileLinks: NavItem[] = [
 
 const tabBase =
   "group/tab relative flex h-full items-center justify-center gap-1.5 px-3.5 py-3.5 xl:px-5.5 transition-colors duration-150";
-const tabActive = "bg-background border-b-foreground/60 border-b-2";
+const tabActive = "bg-background border-b-2 border-b-foreground/60";
 const tabInactive =
   "hover:bg-foreground/[0.03] bg-transparent text-foreground/60 dark:text-foreground/40 hover:text-foreground/70";
 const labelBase =
@@ -100,7 +100,8 @@ const labelBase =
 // ─── Component ───────────────────────────────────────────────────────
 
 export function NavigationBar({ stars }: { stars: number | null }) {
-  const pathname = usePathname() || "/";
+  const rawPathname = usePathname();
+  const pathname = rawPathname ?? "/";
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [linksOpen, setLinksOpen] = useState(false);
   const closeTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);

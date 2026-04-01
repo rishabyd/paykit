@@ -27,22 +27,19 @@ import { createPayKit } from "paykitjs"
 import { free, pro } from "./plans"
 
 export const paykit = createPayKit({
+  // Any provider: (Stripe / Polar / Creem)
   provider: stripe({
     secretKey: env.STRIPE_SECRET_KEY,
     webhookSecret: env.STRIPE_WEBHOOK_SECRET,
   }),
   database: env.DATABASE_URL,
   plans: [free, pro],
-  plugins: [
-    dashboard(),
-  ],
   on: {
-    "plan.activated": ({ customer, plan }) => {
+    "subscription.activated": ({ customer, plan }) => {
       await sendEmail(customer.email, "Welcome to Pro!")
     },
   }
-})
-`;
+})`;
 
 // Demo section — inline snippets for flow log
 export const demoSnippets = {

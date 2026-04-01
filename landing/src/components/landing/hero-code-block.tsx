@@ -145,14 +145,14 @@ export function HeroCodeBlock({
       <div className="border-foreground/[0.1] bg-card flex flex-col overflow-hidden rounded-[6px] border">
         {/* Tab bar */}
         <div className="border-foreground/[0.08] flex items-center border-b">
-          <div className="flex flex-1">
+          <div className="flex flex-1 pl-0.5">
             {view === "code" ? (
               <>
                 <button
                   type="button"
                   onClick={() => setActiveTab("plans")}
                   className={cn(
-                    "relative px-4 py-2 text-[13px] transition-colors",
+                    "relative px-3.5 py-2 text-sm transition-colors",
                     activeTab === "plans"
                       ? "text-foreground/80"
                       : "text-foreground/40 hover:text-foreground/60",
@@ -167,7 +167,7 @@ export function HeroCodeBlock({
                   type="button"
                   onClick={() => setActiveTab("config")}
                   className={cn(
-                    "relative px-4 py-2 text-[13px] transition-colors",
+                    "relative px-3.5 py-2 text-sm transition-colors",
                     activeTab === "config"
                       ? "text-foreground/80"
                       : "text-foreground/40 hover:text-foreground/60",
@@ -180,7 +180,7 @@ export function HeroCodeBlock({
                 </button>
               </>
             ) : (
-              <span className="text-foreground/50 px-4 py-2 font-mono text-[13px]">Terminal</span>
+              <span className="text-foreground/50 px-4 py-2 font-mono text-sm">Terminal</span>
             )}
           </div>
         </div>
