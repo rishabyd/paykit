@@ -179,11 +179,12 @@ export async function createTestPayKit(): Promise<TestPayKit> {
     };
   };
 
-  // 5. Sync products to Stripe
-  await syncProducts(ctx);
-
-  // 6. Start webhook server
+  // 5. Start webhook server BEFORE syncing products — product sync
+  // creates Stripe products which fires webhooks immediately
   const server = startWebhookServer(paykit);
+
+  // 6. Sync products to Stripe
+  await syncProducts(ctx);
 
   return {
     paykit,
