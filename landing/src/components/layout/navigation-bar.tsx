@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, ExternalLink, Github, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useComingSoon } from "@/components/coming-soon-dialog";
 import { LogoLockup } from "@/components/icons/logo";
@@ -100,17 +100,18 @@ const labelBase =
 // ─── Component ───────────────────────────────────────────────────────
 
 export function NavigationBar({ stars }: { stars: number | null }) {
-  const rawPathname = usePathname();
-  const pathname = rawPathname ?? "/";
+  const routerPathname = usePathname();
+  const [pathname, setPathname] = useState("/");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (routerPathname) setPathname(routerPathname);
+  }, [routerPathname]);
   const [linksOpen, setLinksOpen] = useState(false);
   const closeTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const isActive = useCallback(
-    (href: string) =>
-      href === "/" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`),
-    [pathname],
-  );
+  const isActive = (href: string) =>
+    href === "/" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
 
   const openLinks = useCallback(() => {
     if (closeTimeout.current) clearTimeout(closeTimeout.current);
