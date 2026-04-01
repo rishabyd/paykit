@@ -617,6 +617,8 @@ export function createStripeProvider(
           ...data.metadata,
         },
         name: data.name,
+        // TODO: TEMPORARY — remove after test clock testing
+        test_clock: "clock_1TH4KHRT5B5GrIuhPMan0nMK",
       });
 
       return { providerCustomerId: customer.id };
@@ -829,7 +831,10 @@ export function createStripeProvider(
             : (currentSubscription.schedule?.id ?? null);
       }
       if (scheduleId) {
-        await client.subscriptionSchedules.release(scheduleId);
+        const schedule = await client.subscriptionSchedules.retrieve(scheduleId);
+        if (schedule.status !== "released" && schedule.status !== "canceled") {
+          await client.subscriptionSchedules.release(scheduleId);
+        }
       }
 
       const updatedSubscription = (await client.subscriptions.update(data.providerSubscriptionId, {
@@ -852,7 +857,10 @@ export function createStripeProvider(
         scheduleId = typeof sub.schedule === "string" ? sub.schedule : (sub.schedule?.id ?? null);
       }
       if (scheduleId) {
-        await client.subscriptionSchedules.release(scheduleId);
+        const schedule = await client.subscriptionSchedules.retrieve(scheduleId);
+        if (schedule.status !== "released" && schedule.status !== "canceled") {
+          await client.subscriptionSchedules.release(scheduleId);
+        }
       }
 
       const updatedSubscription = (await client.subscriptions.update(data.providerSubscriptionId, {

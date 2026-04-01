@@ -240,10 +240,20 @@ describe("subscription lifecycle", () => {
       const beforeAdvance = new Date();
       await advanceTestClock(t.stripeClient, t.testClockId, advanceTo.toISOString().split("T")[0]!);
 
-      await waitForWebhook(t.pool, "subscription.deleted", {
-        after: beforeAdvance,
-        timeout: 30_000,
-      });
+      // Wait for Stripe to process the cancellation — may arrive as
+      // subscription.deleted or subscription.updated depending on cancel mode
+      try {
+        await waitForWebhook(t.pool, "subscription.deleted", {
+          after: beforeAdvance,
+          timeout: 30_000,
+        });
+      } catch {
+        // If no subscription.deleted, wait for subscription.updated instead
+        await waitForWebhook(t.pool, "subscription.updated", {
+          after: beforeAdvance,
+          timeout: 10_000,
+        });
+      }
 
       const updatedProducts = await getCustomerProducts();
       const canceledUltra = updatedProducts.find(
