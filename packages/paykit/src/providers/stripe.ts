@@ -391,23 +391,10 @@ async function createSubscriptionEvents(
 
   const sourceSubscription = event.data.object as StripeSubscriptionWithExtras;
 
-  const subscription =
-    event.type === "customer.subscription.deleted"
-      ? sourceSubscription
-      : await retrieveExpandedSubscription(client, sourceSubscription.id);
-
-  // Preserve cancellation fields from the webhook event — the re-fetch may
-  // miss them if another update occurs between the event and the fetch.
-  const sourceCancelAt = (sourceSubscription as { cancel_at?: number | null }).cancel_at;
-  if (sourceSubscription.cancel_at_period_end && !subscription.cancel_at_period_end) {
-    (subscription as { cancel_at_period_end: boolean }).cancel_at_period_end = true;
-  }
-  if (sourceCancelAt && !(subscription as { cancel_at?: number | null }).cancel_at) {
-    (subscription as { cancel_at?: number | null }).cancel_at = sourceCancelAt;
-  }
-  if (sourceSubscription.canceled_at && !subscription.canceled_at) {
-    (subscription as { canceled_at: number | null }).canceled_at = sourceSubscription.canceled_at;
-  }
+  // Use the webhook event's subscription data directly. Re-fetching from
+  // Stripe can return stale data during renewals (period dates not yet
+  // propagated). The webhook event is the authoritative source.
+  const subscription = sourceSubscription;
   const providerCustomerId = getStripeCustomerId(subscription.customer);
   if (!providerCustomerId) {
     return [];

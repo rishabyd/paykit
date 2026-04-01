@@ -334,10 +334,16 @@ export async function fakeCheckoutCompletion(
   // Expire the original checkout session since we bypassed it
   await t.stripeClient.checkout.sessions.expire(sessionId).catch(() => {});
 
-  // Override handleWebhook to return our crafted checkout.completed event
+  // Override handleWebhook to return our crafted checkout.completed event.
+  // Use a sentinel in the body to identify our fake request vs real webhooks.
+  const fakeId = `fake_${String(Date.now())}`;
   const originalHandleWebhook = t.ctx.stripe.handleWebhook.bind(t.ctx.stripe);
-  t.ctx.stripe.handleWebhook = async () => {
-    // Restore immediately so subsequent webhook calls go through normally
+  t.ctx.stripe.handleWebhook = async (data) => {
+    // Only intercept our fake request, let real webhooks pass through
+    if (!data.body.includes(fakeId)) {
+      return originalHandleWebhook(data);
+    }
+    // Restore after consuming
     t.ctx.stripe.handleWebhook = originalHandleWebhook;
 
     return [
@@ -359,18 +365,20 @@ export async function fakeCheckoutCompletion(
     ];
   };
 
-  // Send a fake webhook request to the test server
+  // Send a fake webhook request with sentinel so the override can identify it
   const response = await fetch(
     `http://localhost:${String(WEBHOOK_PORT)}/paykit/api/webhook/stripe`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "checkout.session.completed" }),
+      body: JSON.stringify({ type: "checkout.session.completed", id: fakeId }),
     },
   );
 
   if (!response.ok) {
     const text = await response.text();
+    // Restore handler if our request failed
+    t.ctx.stripe.handleWebhook = originalHandleWebhook;
     throw new Error(`Fake checkout webhook failed (${String(response.status)}): ${text}`);
   }
 }
@@ -482,19 +490,26 @@ export async function fakeSubscriptionUpdatedEvent(
   const periodStart = firstItem?.current_period_start ?? null;
   const periodEnd = firstItem?.current_period_end ?? null;
 
+  const providerPriceId = firstItem?.price?.id ?? null;
+
   const normalizedSub = {
     cancelAtPeriodEnd: sub.cancel_at_period_end,
     canceledAt: sub.canceled_at != null ? new Date(sub.canceled_at * 1000) : null,
     currentPeriodEndAt: periodEnd != null ? new Date(periodEnd * 1000) : null,
     currentPeriodStartAt: periodStart != null ? new Date(periodStart * 1000) : null,
     endedAt: sub.ended_at != null ? new Date(sub.ended_at * 1000) : null,
+    providerPriceId,
     providerSubscriptionId: sub.id,
     providerSubscriptionScheduleId: null,
     status: sub.status,
   };
 
+  const fakeId = `fake_renewed_${String(Date.now())}`;
   const originalHandleWebhook = t.ctx.stripe.handleWebhook.bind(t.ctx.stripe);
-  t.ctx.stripe.handleWebhook = async () => {
+  t.ctx.stripe.handleWebhook = async (data) => {
+    if (!data.body.includes(fakeId)) {
+      return originalHandleWebhook(data);
+    }
     t.ctx.stripe.handleWebhook = originalHandleWebhook;
     return [
       {
@@ -507,7 +522,7 @@ export async function fakeSubscriptionUpdatedEvent(
         ],
         payload: {
           providerCustomerId,
-          providerEventId: `evt_fake_renewed_${String(Date.now())}`,
+          providerEventId: `evt_${fakeId}`,
           subscription: normalizedSub,
         },
       },
@@ -519,7 +534,7 @@ export async function fakeSubscriptionUpdatedEvent(
     {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "customer.subscription.updated" }),
+      body: JSON.stringify({ type: "customer.subscription.updated", id: fakeId }),
     },
   );
 
@@ -540,8 +555,12 @@ export async function fakeSubscriptionDeletedEvent(
   providerSubscriptionId: string,
   providerCustomerId: string,
 ): Promise<void> {
+  const fakeId = `fake_deleted_${String(Date.now())}`;
   const originalHandleWebhook = t.ctx.stripe.handleWebhook.bind(t.ctx.stripe);
-  t.ctx.stripe.handleWebhook = async () => {
+  t.ctx.stripe.handleWebhook = async (data) => {
+    if (!data.body.includes(fakeId)) {
+      return originalHandleWebhook(data);
+    }
     t.ctx.stripe.handleWebhook = originalHandleWebhook;
     return [
       {
@@ -554,7 +573,7 @@ export async function fakeSubscriptionDeletedEvent(
         ],
         payload: {
           providerCustomerId,
-          providerEventId: `evt_fake_deleted_${String(Date.now())}`,
+          providerEventId: `evt_${fakeId}`,
           providerSubscriptionId,
         },
       },
@@ -566,7 +585,7 @@ export async function fakeSubscriptionDeletedEvent(
     {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "customer.subscription.deleted" }),
+      body: JSON.stringify({ type: "customer.subscription.deleted", id: fakeId }),
     },
   );
 
@@ -614,7 +633,9 @@ export async function dumpStateOnFailure(pool: PoolLike, dbPath: string): Promis
       if (result.rows.length === 0) {
         console.error("  (empty)");
       } else {
-        console.table(result.rows);
+        for (const row of result.rows) {
+          console.error(JSON.stringify(row, null, 2));
+        }
       }
     } catch {
       console.error(`\n--- ${table.name} --- (query failed)`);

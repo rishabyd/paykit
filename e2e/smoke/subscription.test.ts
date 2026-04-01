@@ -5,7 +5,6 @@ import {
   createTestCustomer,
   createTestPayKit,
   dumpStateOnFailure,
-  fakeCheckoutCompletion,
   type TestPayKit,
   waitForWebhook,
 } from "./setup";
@@ -27,6 +26,8 @@ describe("subscription lifecycle", () => {
   });
 
   afterAll(async () => {
+    // Wait for any remaining webhooks to be delivered before shutting down
+    await new Promise((resolve) => setTimeout(resolve, 5000));
     await t?.cleanup();
   });
 
@@ -126,8 +127,11 @@ describe("subscription lifecycle", () => {
       // No payment method → should return checkout URL
       expect(result.paymentUrl).not.toBeNull();
 
-      // Fake the checkout completion (creates real subscription + feeds webhook)
-      await fakeCheckoutCompletion(t, result.paymentUrl!, providerCustomerId);
+      // Log the checkout URL for manual completion
+      console.log("\n\n  ▶ Complete checkout at:\n  " + result.paymentUrl + "\n");
+
+      // Wait for checkout.completed webhook after manual completion
+      await waitForWebhook(t.pool, "checkout.completed", { timeout: 120_000 });
 
       const products = await getCustomerProducts();
       const pro = products.find((p) => p.plan_id === "pro" && p.status === "active");
@@ -223,49 +227,55 @@ describe("subscription lifecycle", () => {
       expect(ultra!.canceled).toBe(true);
       expect(scheduledFree).toBeDefined();
 
-      // Cancel the subscription directly via Stripe API (test clocks don't
-      // reliably fire lifecycle events through stripe listen)
-      const subProviderResult = await t.pool.query(
-        `SELECT s.provider_subscription_id FROM paykit_subscription s
-         JOIN paykit_customer_product cp ON cp.subscription_id = s.id
-         WHERE cp.customer_id = $1
-         ORDER BY s.updated_at DESC LIMIT 1`,
-        [customerId],
-      );
-      const providerSubId = (subProviderResult.rows[0] as { provider_subscription_id: string })
-        .provider_subscription_id;
+      // Advance clock past period end — wait for real subscription.deleted
+      const sub = await getSubscription();
+      expect(sub).toBeDefined();
+      const periodEnd = new Date(sub!.current_period_end_at as string);
+      const advanceTo = new Date(periodEnd.getTime() + 86_400_000);
+      await advanceTestClock(t.stripeClient, t.testClockId, advanceTo.toISOString().split("T")[0]!);
 
-      // Immediately cancel (not at period end) to simulate period expiry
-      await t.stripeClient.subscriptions.cancel(providerSubId);
-
-      // Feed the subscription.deleted event to PayKit
-      const { fakeSubscriptionDeletedEvent } = await import("./setup");
-      await fakeSubscriptionDeletedEvent(t, providerSubId, providerCustomerId);
-
-      const updatedProducts = await getCustomerProducts();
-      const canceledUltra = updatedProducts.find(
-        (p) => p.plan_id === "ultra" && (p.status === "canceled" || p.status === "ended"),
-      );
-      const activeFree = updatedProducts.find((p) => p.plan_id === "free" && p.status === "active");
+      // Poll DB until Free is active (real webhooks handle the transition)
+      let activeFree: Awaited<ReturnType<typeof getCustomerProducts>>[0] | undefined;
+      let canceledUltra: Awaited<ReturnType<typeof getCustomerProducts>>[0] | undefined;
+      for (let i = 0; i < 60; i++) {
+        const products = await getCustomerProducts();
+        canceledUltra = products.find(
+          (p) => p.plan_id === "ultra" && (p.status === "canceled" || p.status === "ended"),
+        );
+        activeFree = products.find((p) => p.plan_id === "free" && p.status === "active");
+        if (canceledUltra && activeFree) break;
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
 
       expect(canceledUltra).toBeDefined();
       expect(activeFree).toBeDefined();
       expect(activeFree!.current_period_end_at).toBeNull();
     });
 
-    // ─── Step 7: Upgrade Free → Pro ───
+    // ─── Step 7: Upgrade Free → Pro (checkout again) ───
+    // After full subscription cancellation, Stripe clears the customer's
+    // default payment method. Clear it in PayKit's DB too so it correctly
+    // routes through checkout instead of trying direct subscription creation.
+    // TODO: PayKit should handle this automatically on subscription.deleted.
+    await t.pool.query("DELETE FROM paykit_payment_method WHERE customer_id = $1", [customerId]);
+
     await step("upgrade free → pro", async () => {
+      const beforeCheckout = new Date();
+
       const result = await t.paykit.subscribe({
         customerId,
         planId: "pro",
         successUrl: "https://example.com/success",
       });
 
-      // Customer has payment method, so may go direct or checkout
-      if (result.paymentUrl) {
-        await fakeCheckoutCompletion(t, result.paymentUrl, providerCustomerId);
-      }
-      await waitForSubscriptionActive(t.pool, customerId, 20_000);
+      // After full cancellation, Stripe clears the payment method.
+      // Customer must go through checkout again.
+      expect(result.paymentUrl).not.toBeNull();
+      console.log("\n\n  ▶ Complete checkout at:\n  " + result.paymentUrl + "\n");
+      await waitForWebhook(t.pool, "checkout.completed", {
+        after: beforeCheckout,
+        timeout: 120_000,
+      });
 
       const products = await getCustomerProducts();
       const activePro = products.find((p) => p.plan_id === "pro" && p.status === "active");
@@ -274,8 +284,33 @@ describe("subscription lifecycle", () => {
       expect(activePro!.current_period_end_at).not.toBeNull();
     });
 
-    // TODO: Step 8 (renewal) — needs investigation. Test clock advances
-    // work in Stripe but faked webhook events don't update period dates
-    // in PayKit's DB reliably. Will add once the root cause is identified.
+    // ─── Step 8: Renewal ───
+    await step("renewal", async () => {
+      const sub = await getSubscription();
+      expect(sub).toBeDefined();
+
+      const periodEnd = new Date(sub!.current_period_end_at as string);
+
+      // Advance clock past period end — Stripe renews the subscription
+      // and fires webhooks through stripe listen
+      const advanceTo = new Date(periodEnd.getTime() + 86_400_000);
+      await advanceTestClock(t.stripeClient, t.testClockId, advanceTo.toISOString().split("T")[0]!);
+
+      // Poll DB until period dates roll forward (real webhooks update them)
+      let newPeriodEnd = periodEnd;
+      for (let i = 0; i < 30; i++) {
+        const updatedSub = await getSubscription();
+        if (updatedSub) {
+          const end = new Date(updatedSub.current_period_end_at as string);
+          if (end.getTime() > periodEnd.getTime()) {
+            newPeriodEnd = end;
+            break;
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+
+      expect(newPeriodEnd.getTime()).toBeGreaterThan(periodEnd.getTime());
+    });
   });
 });
