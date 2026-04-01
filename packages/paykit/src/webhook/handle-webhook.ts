@@ -551,6 +551,10 @@ async function applyAction(ctx: PayKitContext, action: WebhookApplyAction): Prom
         providerId: ctx.provider.id,
       });
 
+      const subStatus = action.data.subscription.status;
+      const isTerminal =
+        subStatus === "canceled" || subStatus === "ended" || subStatus === "unpaid";
+
       if (action.data.subscription.cancelAtPeriodEnd && activeProduct) {
         await scheduleCustomerProductCancellation(ctx.database, {
           canceledAt: action.data.subscription.canceledAt ?? new Date(),
@@ -569,25 +573,60 @@ async function applyAction(ctx: PayKitContext, action: WebhookApplyAction): Prom
         });
       }
 
-      const activatedCustomerProductId = await activateScheduledCustomerProductForGroup(ctx, {
-        customerId: mapping.customerId,
-        productGroup: storedProduct.group,
-        productInternalId: storedProduct.internalId,
-        subscriptionCurrentPeriodEndAt: action.data.subscription.currentPeriodEndAt,
-        subscriptionCurrentPeriodStartAt: action.data.subscription.currentPeriodStartAt,
-        subscriptionId: subscriptionRow.id,
-        subscriptionStatus: action.data.subscription.status,
-      });
+      // When the subscription reaches a terminal state (canceled/ended),
+      // end the active product and activate the scheduled plan. This handles
+      // the case where Stripe sends subscription.updated with status=canceled
+      // instead of subscription.deleted (e.g. when using cancel_at).
+      if (isTerminal && activeProduct) {
+        const effectiveDate = action.data.subscription.currentPeriodEndAt ?? new Date();
 
-      if (activatedCustomerProductId) {
-        await linkCustomerProductSubscription(ctx.database, {
-          customerProductId: activatedCustomerProductId,
+        await endCustomerProducts(ctx.database, [activeProduct.id], {
+          canceled: true,
+          endedAt: effectiveDate,
+          status: "canceled",
+        });
+
+        await ensureScheduledDefaultPlan(ctx, {
+          customerId: mapping.customerId,
+          group: storedProduct.group,
+          startsAt: effectiveDate,
+        });
+
+        const activatedId = await activateScheduledCustomerProductForGroup(ctx, {
+          customerId: mapping.customerId,
+          productGroup: storedProduct.group,
+          subscriptionId: null,
+          subscriptionCurrentPeriodStartAt: effectiveDate,
+          subscriptionStatus: "active",
+        });
+
+        if (activatedId) {
+          await linkCustomerProductSubscription(ctx.database, {
+            customerProductId: activatedId,
+            subscriptionId: null,
+          });
+        }
+      } else {
+        const activatedCustomerProductId = await activateScheduledCustomerProductForGroup(ctx, {
+          customerId: mapping.customerId,
+          productGroup: storedProduct.group,
+          productInternalId: storedProduct.internalId,
+          subscriptionCurrentPeriodEndAt: action.data.subscription.currentPeriodEndAt,
+          subscriptionCurrentPeriodStartAt: action.data.subscription.currentPeriodStartAt,
           subscriptionId: subscriptionRow.id,
+          subscriptionStatus: action.data.subscription.status,
         });
-        await syncCustomerProductFromSubscription(ctx.database, {
-          customerProductId: activatedCustomerProductId,
-          subscription: action.data.subscription,
-        });
+
+        if (activatedCustomerProductId) {
+          await linkCustomerProductSubscription(ctx.database, {
+            customerProductId: activatedCustomerProductId,
+            subscriptionId: subscriptionRow.id,
+          });
+          await syncCustomerProductFromSubscription(ctx.database, {
+            customerProductId: activatedCustomerProductId,
+            subscription: action.data.subscription,
+          });
+        }
       }
     }
 

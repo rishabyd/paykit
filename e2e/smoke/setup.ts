@@ -128,27 +128,23 @@ export async function createTestPayKit(): Promise<TestPayKit> {
     return { providerCustomerId: customer.id };
   };
 
-  // Override createSubscription to auto-activate (skip SCA confirmation flow).
-  // The original uses payment_behavior: "default_incomplete" which requires
-  // client-side payment confirmation. We use "allow_incomplete" so the
-  // subscription activates immediately with the attached test card.
+  // Override createSubscription to use allow_incomplete. The default
+  // payment_behavior: "default_incomplete" requires client-side payment
+  // confirmation which isn't possible in automated tests.
   ctx.stripe.createSubscription = async (data) => {
-    const params: Stripe.SubscriptionCreateParams = {
+    const sub = await stripeClient.subscriptions.create({
       customer: data.providerCustomerId,
       items: [{ price: data.providerPriceId }],
       payment_behavior: "allow_incomplete",
       expand: ["latest_invoice"],
-    };
-    if (data.trialPeriodDays && data.trialPeriodDays > 0) {
-      params.trial_period_days = data.trialPeriodDays;
-    }
+      ...(data.trialPeriodDays && data.trialPeriodDays > 0
+        ? { trial_period_days: data.trialPeriodDays }
+        : {}),
+    });
 
-    const sub = await stripeClient.subscriptions.create(params);
-    // Period dates are on subscription items in Stripe SDK v19+
     const firstItem = sub.items.data[0];
     const periodStart = firstItem?.current_period_start ?? null;
     const periodEnd = firstItem?.current_period_end ?? null;
-
     const latestInvoice = sub.latest_invoice;
     const invoice =
       latestInvoice && typeof latestInvoice !== "string"
@@ -216,9 +212,9 @@ export async function createTestPayKit(): Promise<TestPayKit> {
 // ---------------------------------------------------------------------------
 
 /**
- * Creates a PayKit customer, subscribes to Free (triggers Stripe customer
- * creation on the test clock), then attaches a test payment method so
- * subsequent subscribes don't need checkout.
+ * Creates a PayKit customer and subscribes to Free (triggers Stripe customer
+ * creation on the test clock). No payment method attached — first paid
+ * subscribe will go through checkout.
  */
 export async function createTestCustomer(
   t: TestPayKit,
@@ -243,7 +239,31 @@ export async function createTestCustomer(
   const providerCustomerId = (result.rows[0] as { provider_customer_id: string })
     .provider_customer_id;
 
-  // Attach test payment method so future subscribes skip checkout
+  return { customerId: input.id, providerCustomerId };
+}
+
+/**
+ * Fakes a checkout completion. After paykit.subscribe() returns a paymentUrl
+ * (checkout session), this:
+ * 1. Retrieves the checkout session from Stripe
+ * 2. Attaches a test payment method and creates a real subscription
+ * 3. Feeds a crafted checkout.completed event to PayKit's webhook handler
+ */
+export async function fakeCheckoutCompletion(
+  t: TestPayKit,
+  paymentUrl: string,
+  providerCustomerId: string,
+): Promise<void> {
+  // Extract checkout session ID from the URL
+  const url = new URL(paymentUrl);
+  const pathParts = url.pathname.split("/");
+  const sessionId = pathParts[pathParts.length - 1] ?? "";
+
+  // Retrieve the session to get metadata
+  const session = await t.stripeClient.checkout.sessions.retrieve(sessionId);
+  const metadata = session.metadata ?? {};
+
+  // Attach test payment method
   const pm = await t.stripeClient.paymentMethods.attach("pm_card_visa", {
     customer: providerCustomerId,
   });
@@ -265,7 +285,94 @@ export async function createTestCustomer(
     providerId: t.ctx.provider.id,
   });
 
-  return { customerId: input.id, providerCustomerId };
+  // Get the price from the session line items
+  const lineItems = await t.stripeClient.checkout.sessions.listLineItems(sessionId);
+  const stripePriceId = lineItems.data[0]?.price?.id;
+  if (!stripePriceId) {
+    throw new Error("No price found on checkout session");
+  }
+
+  // Create real subscription via Stripe API
+  const sub = await t.stripeClient.subscriptions.create({
+    customer: providerCustomerId,
+    items: [{ price: stripePriceId }],
+    metadata,
+    expand: ["latest_invoice"],
+  });
+
+  const firstItem = sub.items.data[0];
+  const periodStart = firstItem?.current_period_start ?? null;
+  const periodEnd = firstItem?.current_period_end ?? null;
+
+  const latestInvoice = sub.latest_invoice;
+  const normalizedInvoice =
+    latestInvoice && typeof latestInvoice !== "string"
+      ? {
+          currency: latestInvoice.currency,
+          hostedUrl: latestInvoice.hosted_invoice_url ?? null,
+          periodEndAt: latestInvoice.period_end ? new Date(latestInvoice.period_end * 1000) : null,
+          periodStartAt: latestInvoice.period_start
+            ? new Date(latestInvoice.period_start * 1000)
+            : null,
+          providerInvoiceId: latestInvoice.id,
+          status: latestInvoice.status,
+          totalAmount: latestInvoice.total,
+        }
+      : undefined;
+
+  const normalizedSub = {
+    cancelAtPeriodEnd: sub.cancel_at_period_end,
+    canceledAt: sub.canceled_at != null ? new Date(sub.canceled_at * 1000) : null,
+    currentPeriodEndAt: periodEnd != null ? new Date(periodEnd * 1000) : null,
+    currentPeriodStartAt: periodStart != null ? new Date(periodStart * 1000) : null,
+    endedAt: sub.ended_at != null ? new Date(sub.ended_at * 1000) : null,
+    providerSubscriptionId: sub.id,
+    providerSubscriptionScheduleId: null,
+    status: sub.status,
+  };
+
+  // Expire the original checkout session since we bypassed it
+  await t.stripeClient.checkout.sessions.expire(sessionId).catch(() => {});
+
+  // Override handleWebhook to return our crafted checkout.completed event
+  const originalHandleWebhook = t.ctx.stripe.handleWebhook.bind(t.ctx.stripe);
+  t.ctx.stripe.handleWebhook = async () => {
+    // Restore immediately so subsequent webhook calls go through normally
+    t.ctx.stripe.handleWebhook = originalHandleWebhook;
+
+    return [
+      {
+        name: "checkout.completed" as const,
+        payload: {
+          checkoutSessionId: session.id,
+          invoice: normalizedInvoice,
+          metadata,
+          mode: "subscription" as const,
+          paymentStatus: "paid",
+          providerCustomerId,
+          providerEventId: `evt_fake_checkout_${String(Date.now())}`,
+          providerSubscriptionId: sub.id,
+          status: "complete",
+          subscription: normalizedSub,
+        },
+      },
+    ];
+  };
+
+  // Send a fake webhook request to the test server
+  const response = await fetch(
+    `http://localhost:${String(WEBHOOK_PORT)}/paykit/api/webhook/stripe`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "checkout.session.completed" }),
+    },
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Fake checkout webhook failed (${String(response.status)}): ${text}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -304,30 +411,6 @@ function startWebhookServer(paykit: ReturnType<typeof createPayKit>): Server {
 
   server.listen(WEBHOOK_PORT);
   return server;
-}
-
-/**
- * After paykit.subscribe() returns a requiredAction with a paymentIntentId,
- * confirm the payment intent to activate the subscription.
- */
-export async function confirmSubscriptionPayment(
-  stripeClient: Stripe,
-  providerCustomerId: string,
-  result: { requiredAction?: { paymentIntentId?: string } | null },
-): Promise<void> {
-  const piId = result.requiredAction?.paymentIntentId;
-  if (!piId) return;
-
-  // Use the customer's default payment method
-  const customer = await stripeClient.customers.retrieve(providerCustomerId);
-  const defaultPm =
-    typeof customer !== "string" && !customer.deleted
-      ? (customer.invoice_settings?.default_payment_method as string | null)
-      : null;
-
-  await stripeClient.paymentIntents.confirm(piId, {
-    payment_method: defaultPm ?? "pm_card_visa",
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -383,6 +466,116 @@ export async function waitForWebhook(
   }
 
   throw new Error(`Timed out waiting for webhook: ${eventType}`);
+}
+
+/**
+ * Manually fires a subscription.updated event for a renewal.
+ * Retrieves the current subscription from Stripe and normalizes it.
+ */
+export async function fakeSubscriptionUpdatedEvent(
+  t: TestPayKit,
+  providerSubscriptionId: string,
+  providerCustomerId: string,
+): Promise<void> {
+  const sub = await t.stripeClient.subscriptions.retrieve(providerSubscriptionId);
+  const firstItem = sub.items.data[0];
+  const periodStart = firstItem?.current_period_start ?? null;
+  const periodEnd = firstItem?.current_period_end ?? null;
+
+  const normalizedSub = {
+    cancelAtPeriodEnd: sub.cancel_at_period_end,
+    canceledAt: sub.canceled_at != null ? new Date(sub.canceled_at * 1000) : null,
+    currentPeriodEndAt: periodEnd != null ? new Date(periodEnd * 1000) : null,
+    currentPeriodStartAt: periodStart != null ? new Date(periodStart * 1000) : null,
+    endedAt: sub.ended_at != null ? new Date(sub.ended_at * 1000) : null,
+    providerSubscriptionId: sub.id,
+    providerSubscriptionScheduleId: null,
+    status: sub.status,
+  };
+
+  const originalHandleWebhook = t.ctx.stripe.handleWebhook.bind(t.ctx.stripe);
+  t.ctx.stripe.handleWebhook = async () => {
+    t.ctx.stripe.handleWebhook = originalHandleWebhook;
+    return [
+      {
+        name: "subscription.updated" as const,
+        actions: [
+          {
+            type: "subscription.upsert" as const,
+            data: { providerCustomerId, subscription: normalizedSub },
+          },
+        ],
+        payload: {
+          providerCustomerId,
+          providerEventId: `evt_fake_renewed_${String(Date.now())}`,
+          subscription: normalizedSub,
+        },
+      },
+    ];
+  };
+
+  const response = await fetch(
+    `http://localhost:${String(WEBHOOK_PORT)}/paykit/api/webhook/stripe`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "customer.subscription.updated" }),
+    },
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `Fake subscription.updated webhook failed (${String(response.status)}): ${text}`,
+    );
+  }
+}
+
+/**
+ * Manually fires a subscription.deleted event to PayKit's webhook handler.
+ * Needed because stripe listen doesn't reliably forward test clock lifecycle events.
+ */
+export async function fakeSubscriptionDeletedEvent(
+  t: TestPayKit,
+  providerSubscriptionId: string,
+  providerCustomerId: string,
+): Promise<void> {
+  const originalHandleWebhook = t.ctx.stripe.handleWebhook.bind(t.ctx.stripe);
+  t.ctx.stripe.handleWebhook = async () => {
+    t.ctx.stripe.handleWebhook = originalHandleWebhook;
+    return [
+      {
+        name: "subscription.deleted" as const,
+        actions: [
+          {
+            type: "subscription.delete" as const,
+            data: { providerCustomerId, providerSubscriptionId },
+          },
+        ],
+        payload: {
+          providerCustomerId,
+          providerEventId: `evt_fake_deleted_${String(Date.now())}`,
+          providerSubscriptionId,
+        },
+      },
+    ];
+  };
+
+  const response = await fetch(
+    `http://localhost:${String(WEBHOOK_PORT)}/paykit/api/webhook/stripe`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "customer.subscription.deleted" }),
+    },
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `Fake subscription.deleted webhook failed (${String(response.status)}): ${text}`,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

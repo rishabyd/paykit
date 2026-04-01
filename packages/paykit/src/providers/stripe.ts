@@ -813,15 +813,6 @@ export function createStripeProvider(
         data.providerSubscriptionId,
       )) as StripeSubscriptionWithExtras;
 
-      const periodEndSeconds =
-        data.currentPeriodEndAt instanceof Date
-          ? Math.floor(data.currentPeriodEndAt.getTime() / 1000)
-          : (getLatestPeriodEnd(currentSubscription) ?? null);
-
-      if (typeof periodEndSeconds !== "number") {
-        throw new Error("Stripe subscription did not include current_period_end.");
-      }
-
       // Release any attached schedule before modifying the subscription directly.
       let scheduleId = data.providerSubscriptionScheduleId ?? null;
       if (!scheduleId) {
@@ -838,7 +829,7 @@ export function createStripeProvider(
       }
 
       const updatedSubscription = (await client.subscriptions.update(data.providerSubscriptionId, {
-        cancel_at: periodEndSeconds,
+        cancel_at_period_end: true,
       })) as StripeSubscriptionWithExtras;
 
       return {
