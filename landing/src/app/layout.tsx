@@ -68,7 +68,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       suppressHydrationWarning
       className={cn(geist.variable, fontMono.variable, GeistPixelSquare.variable)}
     >
-      <body className="overflow-x-hidden font-sans antialiased" suppressHydrationWarning>
+      <body className="font-sans antialiased" suppressHydrationWarning>
         <Providers>{children}</Providers>
         <Analytics />
       </body>
