@@ -152,7 +152,7 @@ export function HeroCodeBlock({
                   type="button"
                   onClick={() => setActiveTab("plans")}
                   className={cn(
-                    "relative px-4 py-2 text-[13px] transition-colors",
+                    "relative px-5 py-2 text-sm transition-colors",
                     activeTab === "plans"
                       ? "text-foreground/80"
                       : "text-foreground/40 hover:text-foreground/60",
@@ -167,7 +167,7 @@ export function HeroCodeBlock({
                   type="button"
                   onClick={() => setActiveTab("config")}
                   className={cn(
-                    "relative px-4 py-2 text-[13px] transition-colors",
+                    "relative px-5 py-2 text-sm transition-colors",
                     activeTab === "config"
                       ? "text-foreground/80"
                       : "text-foreground/40 hover:text-foreground/60",
@@ -180,7 +180,7 @@ export function HeroCodeBlock({
                 </button>
               </>
             ) : (
-              <span className="text-foreground/50 px-4 py-2 font-mono text-[13px]">Terminal</span>
+              <span className="text-foreground/50 px-4 py-2 font-mono text-sm">Terminal</span>
             )}
           </div>
         </div>
