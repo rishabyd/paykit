@@ -23,8 +23,8 @@ const WEBHOOK_PORT = 4567;
 // ---------------------------------------------------------------------------
 
 const messagesFeature = feature({ id: "messages", type: "metered" });
-const proModelsFeature = feature({ id: "pro_models", type: "boolean" });
-const prioritySupportFeature = feature({ id: "priority_support", type: "boolean" });
+const dashboardFeature = feature({ id: "dashboard", type: "boolean" });
+const adminFeature = feature({ id: "admin", type: "boolean" });
 
 export const freePlan = plan({
   default: true,
@@ -38,8 +38,16 @@ export const proPlan = plan({
   group: "base",
   id: "pro",
   name: "Pro",
-  includes: [messagesFeature({ limit: 2_000, reset: "month" }), proModelsFeature()],
-  price: { amount: 19, interval: "month" },
+  includes: [messagesFeature({ limit: 500, reset: "month" }), dashboardFeature()],
+  price: { amount: 20, interval: "month" },
+});
+
+export const premiumPlan = plan({
+  group: "base",
+  id: "premium",
+  name: "Premium",
+  includes: [messagesFeature({ limit: 1_000, reset: "month" }), dashboardFeature(), adminFeature()],
+  price: { amount: 50, interval: "month" },
 });
 
 export const ultraPlan = plan({
@@ -48,10 +56,10 @@ export const ultraPlan = plan({
   name: "Ultra",
   includes: [
     messagesFeature({ limit: 10_000, reset: "month" }),
-    proModelsFeature(),
-    prioritySupportFeature(),
+    dashboardFeature(),
+    adminFeature(),
   ],
-  price: { amount: 49, interval: "month" },
+  price: { amount: 200, interval: "month" },
 });
 
 // ---------------------------------------------------------------------------
@@ -111,7 +119,7 @@ export async function createTestPayKit(): Promise<TestPayKit> {
   const stripeProvider = stripe({ secretKey, webhookSecret });
   const paykit = createPayKit({
     database: pool,
-    plans: { free: freePlan, pro: proPlan, ultra: ultraPlan },
+    plans: { free: freePlan, pro: proPlan, premium: premiumPlan, ultra: ultraPlan },
     provider: stripeProvider,
   });
 
@@ -244,6 +252,157 @@ export async function createTestCustomer(
     .provider_customer_id;
 
   return { customerId: input.id, providerCustomerId };
+}
+
+/**
+ * Creates a PayKit customer with a pre-attached payment method.
+ * Subscribe calls will go through the direct path (no checkout).
+ */
+export async function createTestCustomerWithPM(
+  t: TestPayKit,
+  input: { id: string; email: string; name: string },
+): Promise<{ customerId: string; providerCustomerId: string }> {
+  const { customerId, providerCustomerId } = await createTestCustomer(t, input);
+
+  // Attach test payment method to Stripe customer
+  const pm = await t.stripeClient.paymentMethods.attach("pm_card_visa", {
+    customer: providerCustomerId,
+  });
+  await t.stripeClient.customers.update(providerCustomerId, {
+    invoice_settings: { default_payment_method: pm.id },
+  });
+
+  // Sync payment method into PayKit DB
+  await syncPaymentMethodByProviderCustomer(t.ctx.database, {
+    paymentMethod: {
+      providerMethodId: pm.id,
+      type: pm.type,
+      last4: pm.card?.last4,
+      expiryMonth: pm.card?.exp_month,
+      expiryYear: pm.card?.exp_year,
+      isDefault: true,
+    },
+    providerCustomerId,
+    providerId: t.ctx.provider.id,
+  });
+
+  return { customerId, providerCustomerId };
+}
+
+// ---------------------------------------------------------------------------
+// Assertion helpers
+// ---------------------------------------------------------------------------
+
+export async function expectProduct(
+  pool: PoolLike,
+  customerId: string,
+  planId: string,
+  expected: {
+    status: "active" | "canceled" | "ended" | "scheduled";
+    canceled?: boolean;
+    hasPeriodEnd?: boolean;
+  },
+): Promise<void> {
+  const result = await pool.query(
+    `SELECT cp.status, cp.canceled, cp.current_period_end_at
+     FROM paykit_customer_product cp
+     JOIN paykit_product p ON p.internal_id = cp.product_internal_id
+     WHERE cp.customer_id = $1 AND p.id = $2 AND cp.status = $3
+     ORDER BY cp.created_at DESC LIMIT 1`,
+    [customerId, planId, expected.status],
+  );
+  const row = result.rows[0] as
+    | { status: string; canceled: boolean; current_period_end_at: string | null }
+    | undefined;
+
+  if (!row) {
+    throw new Error(
+      `Expected product "${planId}" with status "${expected.status}" for customer "${customerId}", but not found`,
+    );
+  }
+
+  if (expected.canceled !== undefined && row.canceled !== expected.canceled) {
+    throw new Error(
+      `Expected product "${planId}" canceled=${String(expected.canceled)}, got ${String(row.canceled)}`,
+    );
+  }
+
+  if (expected.hasPeriodEnd === true && row.current_period_end_at == null) {
+    throw new Error(`Expected product "${planId}" to have period end, but it's null`);
+  }
+
+  if (expected.hasPeriodEnd === false && row.current_period_end_at != null) {
+    throw new Error(
+      `Expected product "${planId}" to have no period end, but got ${row.current_period_end_at}`,
+    );
+  }
+}
+
+export async function expectProductNotPresent(
+  pool: PoolLike,
+  customerId: string,
+  planId: string,
+): Promise<void> {
+  const result = await pool.query(
+    `SELECT cp.status FROM paykit_customer_product cp
+     JOIN paykit_product p ON p.internal_id = cp.product_internal_id
+     WHERE cp.customer_id = $1 AND p.id = $2 AND cp.status NOT IN ('ended', 'canceled')
+     ORDER BY cp.created_at DESC LIMIT 1`,
+    [customerId, planId],
+  );
+  if (result.rows.length > 0) {
+    const row = result.rows[0] as { status: string };
+    throw new Error(
+      `Expected product "${planId}" not present, but found with status "${row.status}"`,
+    );
+  }
+}
+
+export async function expectInvoiceCount(
+  pool: PoolLike,
+  customerId: string,
+  expected: number,
+): Promise<void> {
+  const result = await pool.query(
+    "SELECT count(*)::int as count FROM paykit_invoice WHERE customer_id = $1",
+    [customerId],
+  );
+  const count = (result.rows[0] as { count: number }).count;
+  if (count < expected) {
+    throw new Error(`Expected at least ${String(expected)} invoices, got ${String(count)}`);
+  }
+}
+
+export async function expectSubscription(
+  pool: PoolLike,
+  customerId: string,
+  expected: { status?: string; cancelAtPeriodEnd?: boolean },
+): Promise<void> {
+  const result = await pool.query(
+    `SELECT s.status, s.cancel_at_period_end FROM paykit_subscription s
+     JOIN paykit_customer_product cp ON cp.subscription_id = s.id
+     WHERE cp.customer_id = $1
+     ORDER BY s.updated_at DESC LIMIT 1`,
+    [customerId],
+  );
+  const row = result.rows[0] as { status: string; cancel_at_period_end: boolean } | undefined;
+
+  if (!row) {
+    throw new Error(`No subscription found for customer "${customerId}"`);
+  }
+
+  if (expected.status !== undefined && row.status !== expected.status) {
+    throw new Error(`Expected subscription status "${expected.status}", got "${row.status}"`);
+  }
+
+  if (
+    expected.cancelAtPeriodEnd !== undefined &&
+    row.cancel_at_period_end !== expected.cancelAtPeriodEnd
+  ) {
+    throw new Error(
+      `Expected cancel_at_period_end=${String(expected.cancelAtPeriodEnd)}, got ${String(row.cancel_at_period_end)}`,
+    );
+  }
 }
 
 /**
