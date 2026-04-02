@@ -5,8 +5,8 @@ import { stripe } from "@paykitjs/stripe";
 import { config } from "dotenv";
 import { and, count, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { createPayKit, feature, plan } from "paykitjs";
-import pg from "pg";
-import Stripe from "stripe";
+import { Pool } from "pg";
+import { default as Stripe } from "stripe";
 
 import type { PayKitContext } from "../../packages/paykit/src/core/context";
 import type { PayKitDatabase } from "../../packages/paykit/src/database/index";
@@ -101,7 +101,7 @@ export async function createTestPayKit(): Promise<TestPayKit> {
 
   // 1. Create a fresh test database
   const dbName = `paykit_smoke_${String(Date.now())}`;
-  const adminPool = new pg.Pool({
+  const adminPool = new Pool({
     connectionString: process.env.TEST_DATABASE_URL ?? "postgresql://localhost:5432/postgres",
   });
   await adminPool.query(`CREATE DATABASE "${dbName}"`);
@@ -111,7 +111,7 @@ export async function createTestPayKit(): Promise<TestPayKit> {
     /\/[^/]*$/,
     `/${dbName}`,
   );
-  const pool = new pg.Pool({ connectionString: dbUrl });
+  const pool = new Pool({ connectionString: dbUrl });
 
   // 2. Run migrations
   await migrateDatabase(pool);
@@ -217,7 +217,7 @@ export async function createTestPayKit(): Promise<TestPayKit> {
       server.close();
       await pool.end();
       // Drop the test database
-      const cleanupPool = new pg.Pool({
+      const cleanupPool = new Pool({
         connectionString: process.env.TEST_DATABASE_URL ?? "postgresql://localhost:5432/postgres",
       });
       await cleanupPool.query(`DROP DATABASE IF EXISTS "${dbName}"`).catch(() => {});

@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 
 import { config } from "dotenv";
-import pg from "pg";
-import Stripe from "stripe";
+import { Pool } from "pg";
+import { default as Stripe } from "stripe";
 
 // Load env from repo root
 config({ path: path.resolve(import.meta.dirname, "../../.env") });
@@ -26,7 +26,7 @@ export interface CliTestFixture {
  * Creates a temp directory with a paykit.ts config pointing to a real
  * Postgres DB and real Stripe. Returns everything needed for cleanup.
  */
-export async function createCliFixture(globalKey: string): Promise<CliTestFixture> {
+export async function createCliFixture(_globalKey: string): Promise<CliTestFixture> {
   const secretKey = process.env.STRIPE_SECRET_KEY;
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!secretKey || !webhookSecret) {
@@ -38,7 +38,7 @@ export async function createCliFixture(globalKey: string): Promise<CliTestFixtur
   // Create a fresh test database
   const dbName = `paykit_cli_${String(Date.now())}`;
   const adminUrl = process.env.TEST_DATABASE_URL ?? "postgresql://localhost:5432/postgres";
-  const adminPool = new pg.Pool({ connectionString: adminUrl });
+  const adminPool = new Pool({ connectionString: adminUrl });
   await adminPool.query(`CREATE DATABASE "${dbName}"`);
   await adminPool.end();
 
@@ -60,7 +60,7 @@ export async function createCliFixture(globalKey: string): Promise<CliTestFixtur
       `import { stripe } from ${JSON.stringify(toImportPath(stripePath))};`,
       `import pg from "pg";`,
       "",
-      `const pool = new pg.Pool({ connectionString: ${JSON.stringify(dbUrl)} });`,
+      `const pool = new Pool({ connectionString: ${JSON.stringify(dbUrl)} });`,
       "",
       `const messagesFeature = feature({ id: "messages", type: "metered" });`,
       "",
@@ -113,7 +113,7 @@ export async function createCliFixture(globalKey: string): Promise<CliTestFixtur
     }
 
     // Drop the test database
-    const cleanupPool = new pg.Pool({ connectionString: adminUrl });
+    const cleanupPool = new Pool({ connectionString: adminUrl });
     await cleanupPool.query(`DROP DATABASE IF EXISTS "${dbName}"`).catch(() => {});
     await cleanupPool.end();
 

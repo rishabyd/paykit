@@ -19,7 +19,6 @@ import {
 describe("subscription lifecycle", () => {
   let t: TestPayKit;
   let customerId: string;
-  let providerCustomerId: string;
 
   beforeAll(async () => {
     t = await createTestPayKit();
@@ -29,7 +28,6 @@ describe("subscription lifecycle", () => {
       name: "Smoke Test User",
     });
     customerId = customer.customerId;
-    providerCustomerId = customer.providerCustomerId;
   });
 
   afterAll(async () => {
@@ -145,8 +143,6 @@ describe("subscription lifecycle", () => {
 
     // ─── Step 3: Upgrade Pro → Ultra (immediate) ───
     await step("upgrade pro → ultra", async () => {
-      const beforeUpgrade = new Date();
-
       await t.paykit.subscribe({
         customerId,
         planId: "ultra",

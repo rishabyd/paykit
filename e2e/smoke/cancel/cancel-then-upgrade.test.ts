@@ -5,7 +5,6 @@ import {
   createTestPayKit,
   dumpStateOnFailure,
   expectProduct,
-  expectProductNotPresent,
   type TestPayKit,
   waitForWebhook,
 } from "../setup";
