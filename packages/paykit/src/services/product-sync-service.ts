@@ -3,14 +3,11 @@ import type { StoredProductFeature } from "../types/models";
 import type { NormalizedPlan, NormalizedPlanFeature } from "../types/schema";
 import {
   getLatestProductSnapshot,
-  getProviderPrice,
   getProviderProduct,
-  insertPrice,
   insertProductVersion,
   replaceProductFeatures,
   updateProductName,
   upsertFeature,
-  upsertProviderPrice,
   upsertProviderProduct,
 } from "./product-service";
 
@@ -58,8 +55,8 @@ function planChanged(
   return (
     existing.product.group !== next.group ||
     existing.product.isDefault !== next.isDefault ||
-    (existing.price?.amount ?? null) !== next.priceAmount ||
-    (existing.price?.interval ?? null) !== next.priceInterval ||
+    (existing.product.priceAmount ?? null) !== next.priceAmount ||
+    (existing.product.priceInterval ?? null) !== next.priceInterval ||
     featuresChanged(existing.features, next.includes)
   );
 }
@@ -102,13 +99,8 @@ export async function syncProducts(ctx: PayKitContext): Promise<SyncProductResul
     const existingProviderProduct = existing
       ? await getProviderProduct(ctx.database, existing.product.internalId, providerId)
       : null;
-    const existingProviderPrice =
-      existing?.price && existingProviderProduct
-        ? await getProviderPrice(ctx.database, existing.price.id, providerId)
-        : null;
 
     let storedProduct = existing?.product ?? null;
-    let storedPrice = existing?.price ?? null;
     let action: SyncProductResult["action"] = "unchanged";
 
     if (!existing) {
@@ -117,17 +109,10 @@ export async function syncProducts(ctx: PayKitContext): Promise<SyncProductResul
         id: plan.id,
         isDefault: plan.isDefault,
         name: plan.name,
+        priceAmount: plan.priceAmount,
+        priceInterval: plan.priceInterval,
         version: 1,
       });
-      if (plan.priceAmount !== null && plan.priceInterval !== null) {
-        storedPrice = await insertPrice(ctx.database, {
-          amount: plan.priceAmount,
-          interval: plan.priceInterval,
-          productInternalId: storedProduct.internalId,
-        });
-      } else {
-        storedPrice = null;
-      }
       await replaceProductFeatures(ctx.database, {
         features: plan.includes,
         productInternalId: storedProduct.internalId,
@@ -139,17 +124,10 @@ export async function syncProducts(ctx: PayKitContext): Promise<SyncProductResul
         id: plan.id,
         isDefault: plan.isDefault,
         name: plan.name,
+        priceAmount: plan.priceAmount,
+        priceInterval: plan.priceInterval,
         version: existing.product.version + 1,
       });
-      if (plan.priceAmount !== null && plan.priceInterval !== null) {
-        storedPrice = await insertPrice(ctx.database, {
-          amount: plan.priceAmount,
-          interval: plan.priceInterval,
-          productInternalId: storedProduct.internalId,
-        });
-      } else {
-        storedPrice = null;
-      }
       await replaceProductFeatures(ctx.database, {
         features: plan.includes,
         productInternalId: storedProduct.internalId,
@@ -165,28 +143,24 @@ export async function syncProducts(ctx: PayKitContext): Promise<SyncProductResul
       throw new Error(`Failed to sync plan "${plan.id}".`);
     }
 
-    if (storedPrice) {
+    if (storedProduct.priceAmount !== null && storedProduct.priceInterval !== null) {
       const shouldReuseExistingPriceId =
-        action !== "created" && existingProviderPrice?.providerPriceId !== undefined;
+        action !== "created" && existingProviderProduct?.priceId !== undefined;
       const providerResult = await ctx.stripe.syncProduct({
         existingProviderPriceId: shouldReuseExistingPriceId
-          ? (existingProviderPrice?.providerPriceId ?? null)
+          ? (existingProviderProduct?.priceId ?? null)
           : null,
-        existingProviderProductId: existingProviderProduct?.providerProductId ?? null,
+        existingProviderProductId: existingProviderProduct?.productId ?? null,
         id: plan.id,
         name: plan.name,
-        priceAmount: storedPrice.amount,
-        priceInterval: storedPrice.interval,
+        priceAmount: storedProduct.priceAmount,
+        priceInterval: storedProduct.priceInterval,
       });
 
       await upsertProviderProduct(ctx.database, {
         productInternalId: storedProduct.internalId,
         providerId,
         providerProductId: providerResult.providerProductId,
-      });
-      await upsertProviderPrice(ctx.database, {
-        priceId: storedPrice.id,
-        providerId,
         providerPriceId: providerResult.providerPriceId,
       });
     }

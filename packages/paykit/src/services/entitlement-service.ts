@@ -33,7 +33,6 @@ interface ActiveEntitlementRow {
   nextResetAt: Date | null;
   originalLimit: number | null;
   resetInterval: string | null;
-  unlimited: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -61,7 +60,7 @@ function addResetInterval(date: Date, resetInterval: string): Date {
 function aggregateBalance(rows: ActiveEntitlementRow[]): EntitlementBalance | null {
   if (rows.length === 0) return null;
 
-  const hasUnlimited = rows.some((row) => row.unlimited);
+  const hasUnlimited = rows.some((row) => row.originalLimit === null);
   if (hasUnlimited) {
     return { limit: 0, remaining: 0, resetAt: null, unlimited: true };
   }
@@ -72,7 +71,7 @@ function aggregateBalance(rows: ActiveEntitlementRow[]): EntitlementBalance | nu
 
   for (const row of rows) {
     remaining += row.balance;
-    limit += row.originalLimit ?? 0;
+    limit += row.originalLimit!;
     if (row.nextResetAt) {
       if (!resetAt || row.nextResetAt < resetAt) {
         resetAt = row.nextResetAt;
@@ -92,13 +91,12 @@ async function getActiveEntitlements(
   const result = (await db.execute(sql`
     SELECT
       ce.id,
-      ce.unlimited,
       ce.balance,
       ce.next_reset_at AS "nextResetAt",
       pf."limit" AS "originalLimit",
       pf.reset_interval AS "resetInterval"
-    FROM paykit_customer_entitlement ce
-    INNER JOIN paykit_customer_product cp ON cp.id = ce.customer_product_id
+    FROM paykit_entitlement ce
+    INNER JOIN paykit_subscription cp ON cp.id = ce.subscription_id
     INNER JOIN paykit_product_feature pf
       ON pf.product_internal_id = cp.product_internal_id
       AND pf.feature_id = ce.feature_id
@@ -127,7 +125,7 @@ async function resetStaleEntitlements(
     ) {
       const nextReset = addResetInterval(now, row.resetInterval);
       await db.execute(sql`
-        UPDATE paykit_customer_entitlement
+        UPDATE paykit_entitlement
         SET balance = ${row.originalLimit},
             next_reset_at = ${nextReset},
             updated_at = ${now}
@@ -188,7 +186,7 @@ export async function reportEntitlement(
     return { balance: null, success: false };
   }
 
-  const hasUnlimited = rows.some((row) => row.unlimited);
+  const hasUnlimited = rows.some((row) => row.originalLimit === null);
   if (hasUnlimited) {
     return { balance: aggregateBalance(rows), success: true };
   }
@@ -197,10 +195,10 @@ export async function reportEntitlement(
   // The WHERE balance >= $amount guard prevents over-decrementing under concurrency.
   let deducted = false;
   for (const row of rows) {
-    if (row.unlimited || row.balance < amount) continue;
+    if (row.originalLimit === null || row.balance < amount) continue;
 
     const result = (await database.execute(sql`
-      UPDATE paykit_customer_entitlement
+      UPDATE paykit_entitlement
       SET balance = balance - ${amount}, updated_at = ${new Date()}
       WHERE id = ${row.id}
         AND balance >= ${amount}

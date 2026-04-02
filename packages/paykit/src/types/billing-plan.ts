@@ -75,22 +75,20 @@ export interface StripeBillingPlan {
 // PayKit billing plan — declarative DB mutations
 // ---------------------------------------------------------------------------
 
-export interface CustomerProductInsert {
+export interface SubscriptionInsert {
   customerId: string;
   productInternalId: string;
   planFeatures: readonly NormalizedPlanFeature[];
-  priceId: string | null;
   providerId: string;
   status: "active" | "scheduled" | "trialing";
   startedAt: Date | null;
   trialEndsAt?: Date | null;
   currentPeriodStartAt?: Date | null;
   currentPeriodEndAt?: Date | null;
-  subscriptionId?: string | null;
 }
 
-export interface CustomerProductUpdate {
-  customerProductId: string;
+export interface SubscriptionUpdate {
+  subscriptionId: string;
   canceled: boolean;
   canceledAt: Date | null;
   endedAt: Date | null;
@@ -101,8 +99,8 @@ export interface CustomerProductUpdate {
 export interface PayKitBillingPlan {
   customerId: string;
   group: string;
-  insertProducts: CustomerProductInsert[];
-  updateProduct: CustomerProductUpdate | null;
+  insertSubscriptions: SubscriptionInsert[];
+  updateSubscription: SubscriptionUpdate | null;
   deleteScheduledInGroup: boolean;
   clearScheduledInGroup: boolean;
 }

@@ -151,7 +151,7 @@ describe("check", () => {
 
     // Drain the balance and set nextResetAt to the past
     await pool.query(`
-      UPDATE paykit_customer_entitlement
+      UPDATE paykit_entitlement
       SET balance = 0, next_reset_at = now() - INTERVAL '1 hour'
       WHERE customer_id = 'user_1' AND feature_id = 'messages'
     `);
@@ -177,9 +177,9 @@ describe("check", () => {
       successUrl: "https://example.com/success",
     });
 
-    // End the customer product
+    // End the subscription
     await pool.query(`
-      UPDATE paykit_customer_product
+      UPDATE paykit_subscription
       SET status = 'ended', ended_at = now()
       WHERE customer_id = 'user_1'
     `);
@@ -243,7 +243,7 @@ describe("report", () => {
 
     // Drain to 0
     await pool.query(`
-      UPDATE paykit_customer_entitlement
+      UPDATE paykit_entitlement
       SET balance = 0
       WHERE customer_id = 'user_1' AND feature_id = 'messages'
     `);
@@ -286,7 +286,7 @@ describe("report", () => {
 
     // Drain balance and expire the reset
     await pool.query(`
-      UPDATE paykit_customer_entitlement
+      UPDATE paykit_entitlement
       SET balance = 0, next_reset_at = now() - INTERVAL '1 hour'
       WHERE customer_id = 'user_1' AND feature_id = 'messages'
     `);

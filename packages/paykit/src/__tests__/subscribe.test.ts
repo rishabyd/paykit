@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { PayKitContext } from "../core/context";
-import { paymentMethod, providerCustomer } from "../database/schema";
+import { paymentMethod } from "../database/schema";
 import { createPayKit, feature, plan } from "../index";
 import { syncCustomer } from "../services/customer-service";
 import { syncProducts } from "../services/product-sync-service";
@@ -59,7 +59,7 @@ describe("subscribe", () => {
     expect(metadataRows.rows).toHaveLength(1);
   });
 
-  it("should create customer product and subscription rows for direct subscription attaches", async () => {
+  it("should create subscription rows for direct subscription attaches", async () => {
     const pool = await createMigratedTestPool();
     const paykit = createPayKit({
       database: pool,
@@ -98,19 +98,12 @@ describe("subscribe", () => {
     expect(result.paymentUrl).toBeNull();
     expect(result.invoice?.providerInvoiceId).toBe("inv_mock_price_pro_2000");
 
-    const customerProducts = await pool.query(`
-      select status
-      from paykit_customer_product
-      where customer_id = 'user_direct'
-    `);
     const subscriptions = await pool.query(`
       select status
       from paykit_subscription
       where customer_id = 'user_direct'
     `);
 
-    expect(customerProducts.rows).toHaveLength(1);
-    expect((customerProducts.rows[0] as { status: string }).status).toBe("active");
     expect(subscriptions.rows).toHaveLength(1);
     expect((subscriptions.rows[0] as { status: string }).status).toBe("active");
   });
@@ -160,22 +153,16 @@ describe("subscribe", () => {
 
     expect(result.paymentUrl).toBeNull();
 
-    const customerProducts = await pool.query(`
-      select status
-      from paykit_customer_product
-      where customer_id = 'user_free_to_pro'
-      order by created_at asc
-    `);
     const subscriptions = await pool.query(`
       select status
       from paykit_subscription
       where customer_id = 'user_free_to_pro'
+      order by created_at asc
     `);
 
-    expect(customerProducts.rows).toHaveLength(2);
-    expect((customerProducts.rows[0] as { status: string }).status).toBe("ended");
-    expect((customerProducts.rows[1] as { status: string }).status).toBe("active");
-    expect(subscriptions.rows).toHaveLength(1);
+    expect(subscriptions.rows).toHaveLength(2);
+    expect((subscriptions.rows[0] as { status: string }).status).toBe("ended");
+    expect((subscriptions.rows[1] as { status: string }).status).toBe("active");
   });
 
   it("should materialize subscription state from webhook events", async () => {
@@ -232,25 +219,23 @@ describe("subscribe", () => {
       id: "user_webhook_sub",
       name: "Webhook Sub User",
     });
-    await ctx.database.insert(providerCustomer).values({
-      createdAt: new Date(),
-      customerId: "user_webhook_sub",
-      id: "pc_123",
-      providerCustomerId: "cus_user_webhook_sub",
-      providerId: "stripe",
-    });
+    await pool.query(`
+      UPDATE paykit_customer
+      SET provider = '{"stripe": {"id": "cus_user_webhook_sub"}}'::jsonb
+      WHERE id = 'user_webhook_sub'
+    `);
 
     await paykit.handleWebhook({
       body: "{}",
       headers: {},
     });
 
-    const customerProducts = await pool.query(`
+    const subscriptions = await pool.query(`
       select status
-      from paykit_customer_product
+      from paykit_subscription
       where customer_id = 'user_webhook_sub'
     `);
-    expect(customerProducts.rows).toHaveLength(1);
-    expect((customerProducts.rows[0] as { status: string }).status).toBe("active");
+    expect(subscriptions.rows).toHaveLength(1);
+    expect((subscriptions.rows[0] as { status: string }).status).toBe("active");
   });
 });

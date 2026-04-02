@@ -1,33 +1,30 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import type { PayKitContext } from "../core/context";
 import { getTraceId, runWithTrace } from "../core/trace";
-import { customerProduct, product, subscription as subscriptionTable } from "../database/schema";
+import { product } from "../database/schema";
 import {
-  activateScheduledCustomerProduct,
+  activateScheduledSubscription,
   beginWebhookEvent,
   deleteMetadataById,
-  deleteScheduledCustomerProductsInGroup,
-  endCustomerProducts,
+  deleteScheduledSubscriptionsInGroup,
+  endSubscriptions,
   finishWebhookEvent,
-  getActiveCustomerProductInGroup,
-  getCustomerProductById,
-  getCurrentCustomerPlans,
+  getActiveSubscriptionInGroup,
+  getCurrentSubscriptions,
   getMetadataById,
-  getScheduledCustomerProductsInGroup,
-  getSubscriptionByProviderId,
-  insertCustomerProductRecord,
-  linkCustomerProductSubscription,
-  replaceCurrentProductSchedule,
-  scheduleCustomerProductCancellation,
-  syncCustomerProductBillingState,
-  syncCustomerProductFromSubscription,
+  getScheduledSubscriptionsInGroup,
+  getSubscriptionByProviderSubscriptionId,
+  insertSubscriptionRecord,
+  replaceSubscriptionSchedule,
+  scheduleSubscriptionCancellation,
+  syncSubscriptionBillingState,
+  syncSubscriptionFromProvider,
   upsertInvoiceRecord,
-  upsertSubscriptionRecord,
 } from "../services/billing-service";
 import {
   deleteCustomerFromDatabase,
-  getProviderCustomerByProviderCustomerId,
+  findCustomerByProviderCustomerId,
   syncCustomer,
 } from "../services/customer-service";
 import {
@@ -54,7 +51,7 @@ export interface HandleWebhookInput {
 }
 
 async function emitCustomerUpdated(ctx: PayKitContext, customerId: string): Promise<void> {
-  const subscriptions = await getCurrentCustomerPlans(ctx.database, customerId);
+  const subscriptions = await getCurrentSubscriptions(ctx.database, customerId);
   const payload = { customerId, subscriptions };
 
   try {
@@ -89,17 +86,16 @@ async function ensureScheduledDefaultPlan(
     startsAt: Date;
   },
 ): Promise<void> {
-  const existingScheduled = await getScheduledCustomerProductsInGroup(ctx.database, {
+  const existingScheduled = await getScheduledSubscriptionsInGroup(ctx.database, {
     customerId: input.customerId,
     group: input.group,
-    providerId: ctx.provider.id,
   });
   if (existingScheduled.length > 0) {
     return;
   }
 
   const defaultPlan = await getDefaultProductInGroup(ctx.database, input.group, ctx.provider.id);
-  if (!defaultPlan || defaultPlan.priceId !== null) {
+  if (!defaultPlan || defaultPlan.priceAmount !== null) {
     return;
   }
 
@@ -108,40 +104,39 @@ async function ensureScheduledDefaultPlan(
     return;
   }
 
-  await insertCustomerProductRecord(ctx.database, {
+  await insertSubscriptionRecord(ctx.database, {
     customerId: input.customerId,
     planFeatures: normalizedPlan.includes,
     productInternalId: defaultPlan.internalId,
-    providerId: ctx.provider.id,
     startedAt: input.startsAt,
     status: "scheduled",
   });
 }
 
-async function activateScheduledCustomerProductForGroup(
+async function activateScheduledSubscriptionForGroup(
   ctx: PayKitContext,
   input: {
     customerId: string;
     productGroup: string;
     productInternalId?: string | null;
-    subscriptionId: string | null;
     subscriptionStatus: string;
     subscriptionCurrentPeriodEndAt?: Date | null;
     subscriptionCurrentPeriodStartAt?: Date | null;
+    providerId?: string | null;
+    providerData?: Record<string, unknown> | null;
   },
 ): Promise<string | null> {
   const activationDate = getSubscriptionEffectiveDate({
     currentPeriodEndAt: input.subscriptionCurrentPeriodEndAt,
     currentPeriodStartAt: input.subscriptionCurrentPeriodStartAt,
   });
-  const scheduledProducts = await getScheduledCustomerProductsInGroup(ctx.database, {
+  const scheduledSubs = await getScheduledSubscriptionsInGroup(ctx.database, {
     customerId: input.customerId,
     group: input.productGroup,
-    providerId: ctx.provider.id,
   });
 
-  const targetProduct = scheduledProducts.find((scheduledProduct) => {
-    if (scheduledProduct.startedAt && scheduledProduct.startedAt > activationDate) {
+  const targetSub = scheduledSubs.find((scheduled) => {
+    if (scheduled.startedAt && scheduled.startedAt > activationDate) {
       return false;
     }
 
@@ -149,37 +144,37 @@ async function activateScheduledCustomerProductForGroup(
       return true;
     }
 
-    return scheduledProduct.productInternalId === input.productInternalId;
+    return scheduled.productInternalId === input.productInternalId;
   });
 
-  if (!targetProduct) {
+  if (!targetSub) {
     return null;
   }
 
-  const activeProduct = await getActiveCustomerProductInGroup(ctx.database, {
+  const activeSub = await getActiveSubscriptionInGroup(ctx.database, {
     customerId: input.customerId,
     group: input.productGroup,
-    providerId: ctx.provider.id,
   });
 
-  if (activeProduct && activeProduct.id !== targetProduct.id) {
-    await endCustomerProducts(ctx.database, [activeProduct.id], {
-      canceled: activeProduct.canceled,
+  if (activeSub && activeSub.id !== targetSub.id) {
+    await endSubscriptions(ctx.database, [activeSub.id], {
+      canceled: activeSub.canceled,
       endedAt: activationDate,
       status: "ended",
     });
   }
 
-  await activateScheduledCustomerProduct(ctx.database, {
+  await activateScheduledSubscription(ctx.database, {
     currentPeriodEndAt: input.subscriptionCurrentPeriodEndAt,
     currentPeriodStartAt: input.subscriptionCurrentPeriodStartAt,
-    customerProductId: targetProduct.id,
-    startedAt: targetProduct.startedAt ?? activationDate,
+    subscriptionId: targetSub.id,
+    startedAt: targetSub.startedAt ?? activationDate,
     status: input.subscriptionStatus,
-    subscriptionId: input.subscriptionId,
+    providerId: input.providerId,
+    providerData: input.providerData,
   });
 
-  return targetProduct.id;
+  return targetSub.id;
 }
 
 function getProviderEventId(
@@ -267,20 +262,13 @@ async function finalizeLegacyCheckout(
     return null;
   }
 
-  const existingCustomerProduct = await ctx.database.query.customerProduct.findFirst({
-    where: and(
-      eq(customerProduct.providerId, ctx.provider.id),
-      eq(customerProduct.providerCheckoutSessionId, event.payload.checkoutSessionId),
-    ),
-  });
-
   const storedPlan = await getLatestProductWithPrice(ctx.database, {
     id: planId,
     providerId: ctx.provider.id,
   });
   const normalizedPlan = ctx.plans.plans.find((plan) => plan.id === planId);
-  const existingSubscription = event.payload.providerSubscriptionId
-    ? await getSubscriptionByProviderId(ctx.database, {
+  const existingSub = event.payload.providerSubscriptionId
+    ? await getSubscriptionByProviderSubscriptionId(ctx.database, {
         providerId: ctx.provider.id,
         providerSubscriptionId: event.payload.providerSubscriptionId,
       })
@@ -288,89 +276,62 @@ async function finalizeLegacyCheckout(
   const checkoutSubscription = event.payload.subscription ?? null;
   const checkoutInvoice = event.payload.invoice ?? null;
 
-  const pendingCustomerProduct =
-    !existingCustomerProduct && storedPlan
-      ? await ctx.database.query.customerProduct.findFirst({
-          where: and(
-            eq(customerProduct.customerId, customerId),
-            eq(customerProduct.productInternalId, storedPlan.internalId),
-            isNull(customerProduct.endedAt),
-          ),
-          orderBy(fields) {
-            return [desc(fields.createdAt)];
-          },
+  if (storedPlan && normalizedPlan) {
+    const currentPeriodStartAt =
+      checkoutSubscription?.currentPeriodStartAt ?? existingSub?.currentPeriodStartAt ?? null;
+    const currentPeriodEndAt =
+      checkoutSubscription?.currentPeriodEndAt ?? existingSub?.currentPeriodEndAt ?? null;
+    const currentGroupActiveSub = storedPlan.group
+      ? await getActiveSubscriptionInGroup(ctx.database, {
+          customerId,
+          group: storedPlan.group,
         })
       : null;
 
-  if (storedPlan && normalizedPlan) {
-    const currentPeriodStartAt =
-      checkoutSubscription?.currentPeriodStartAt ??
-      existingSubscription?.currentPeriodStartAt ??
-      null;
-    const currentPeriodEndAt =
-      checkoutSubscription?.currentPeriodEndAt ?? existingSubscription?.currentPeriodEndAt ?? null;
-    const currentGroupActiveProduct = storedPlan.group
-      ? await getActiveCustomerProductInGroup(ctx.database, {
-          customerId,
-          group: storedPlan.group,
-          providerId: ctx.provider.id,
-        })
-      : null;
-    const targetCustomerProduct =
-      existingCustomerProduct ??
-      pendingCustomerProduct ??
-      (await insertCustomerProductRecord(ctx.database, {
+    const providerData = checkoutSubscription
+      ? { subscriptionId: checkoutSubscription.providerSubscriptionId }
+      : (existingSub?.providerData ?? null);
+
+    // Use existing subscription or create a new one
+    const targetSub =
+      existingSub ??
+      (await insertSubscriptionRecord(ctx.database, {
         currentPeriodEndAt,
         currentPeriodStartAt,
         customerId,
         planFeatures: normalizedPlan.includes,
-        priceId: storedPlan.priceId,
         productInternalId: storedPlan.internalId,
-        providerCheckoutSessionId: event.payload.checkoutSessionId,
         providerId: ctx.provider.id,
+        providerData,
         startedAt: currentPeriodStartAt ?? new Date(),
-        status: checkoutSubscription?.status ?? existingSubscription?.status ?? "active",
-        subscriptionId: existingSubscription?.id ?? null,
+        status: checkoutSubscription?.status ?? existingSub?.status ?? "active",
       }));
 
     if (
-      currentGroupActiveProduct &&
-      currentGroupActiveProduct.id !== targetCustomerProduct.id &&
-      currentGroupActiveProduct.productInternalId !== targetCustomerProduct.productInternalId
+      currentGroupActiveSub &&
+      currentGroupActiveSub.id !== targetSub.id &&
+      currentGroupActiveSub.productInternalId !== targetSub.productInternalId
     ) {
-      await endCustomerProducts(ctx.database, [currentGroupActiveProduct.id], {
+      await endSubscriptions(ctx.database, [currentGroupActiveSub.id], {
         canceled: false,
         endedAt: currentPeriodStartAt ?? new Date(),
         status: "ended",
       });
     }
 
-    await syncCustomerProductBillingState(ctx.database, {
-      customerProductId: targetCustomerProduct.id,
+    await syncSubscriptionBillingState(ctx.database, {
+      subscriptionId: targetSub.id,
       currentPeriodEndAt,
       currentPeriodStartAt,
-      providerCheckoutSessionId: event.payload.checkoutSessionId,
-      startedAt: currentPeriodStartAt ?? targetCustomerProduct.startedAt,
-      status:
-        checkoutSubscription?.status ??
-        existingSubscription?.status ??
-        targetCustomerProduct.status,
-      subscriptionId: existingSubscription?.id ?? targetCustomerProduct.subscriptionId,
+      providerData: providerData ?? targetSub.providerData,
+      startedAt: currentPeriodStartAt ?? targetSub.startedAt,
+      status: checkoutSubscription?.status ?? existingSub?.status ?? targetSub.status,
     });
 
-    const subscriptionRow = checkoutSubscription
-      ? await upsertSubscriptionRecord(ctx.database, {
-          customerId,
-          customerProductId: targetCustomerProduct.id,
-          providerId: ctx.provider.id,
-          subscription: checkoutSubscription,
-        })
-      : existingSubscription;
-
-    if (subscriptionRow) {
-      await linkCustomerProductSubscription(ctx.database, {
-        customerProductId: targetCustomerProduct.id,
-        subscriptionId: subscriptionRow.id,
+    if (checkoutSubscription) {
+      await syncSubscriptionFromProvider(ctx.database, {
+        subscriptionId: targetSub.id,
+        providerSubscription: checkoutSubscription,
       });
     }
 
@@ -379,7 +340,7 @@ async function finalizeLegacyCheckout(
         customerId,
         invoice: checkoutInvoice,
         providerId: ctx.provider.id,
-        subscriptionId: subscriptionRow?.id ?? null,
+        subscriptionId: targetSub.id,
       });
     }
   }
@@ -406,11 +367,11 @@ async function applyAction(ctx: PayKitContext, action: WebhookApplyAction): Prom
       providerId: ctx.provider.id,
     });
 
-    const mapping = await getProviderCustomerByProviderCustomerId(ctx.database, {
+    const customerRow = await findCustomerByProviderCustomerId(ctx.database, {
       providerCustomerId: action.data.providerCustomerId,
       providerId: ctx.provider.id,
     });
-    return mapping?.customerId ?? null;
+    return customerRow?.id ?? null;
   }
 
   if (action.type === "payment_method.delete") {
@@ -428,23 +389,23 @@ async function applyAction(ctx: PayKitContext, action: WebhookApplyAction): Prom
       providerId: ctx.provider.id,
     });
 
-    const mapping = await getProviderCustomerByProviderCustomerId(ctx.database, {
+    const customerRow = await findCustomerByProviderCustomerId(ctx.database, {
       providerCustomerId: action.data.providerCustomerId,
       providerId: ctx.provider.id,
     });
-    return mapping?.customerId ?? null;
+    return customerRow?.id ?? null;
   }
 
   if (action.type === "subscription.upsert") {
-    const mapping = await getProviderCustomerByProviderCustomerId(ctx.database, {
+    const customerRow = await findCustomerByProviderCustomerId(ctx.database, {
       providerCustomerId: action.data.providerCustomerId,
       providerId: ctx.provider.id,
     });
-    if (!mapping) {
+    if (!customerRow) {
       return null;
     }
 
-    const existingSubscription = await getSubscriptionByProviderId(ctx.database, {
+    const existingSub = await getSubscriptionByProviderSubscriptionId(ctx.database, {
       providerId: ctx.provider.id,
       providerSubscriptionId: action.data.subscription.providerSubscriptionId,
     });
@@ -458,49 +419,42 @@ async function applyAction(ctx: PayKitContext, action: WebhookApplyAction): Prom
       ? ctx.plans.plans.find((plan) => plan.id === storedProduct.id)
       : null;
 
-    let customerProductId = existingSubscription?.customerProductId ?? null;
-    if (!customerProductId) {
-      let pendingCustomerProduct = null;
+    const providerData = {
+      subscriptionId: action.data.subscription.providerSubscriptionId,
+    };
 
-      if (storedProduct) {
-        pendingCustomerProduct = storedProduct
-          ? await ctx.database.query.customerProduct.findFirst({
-              where: and(
-                eq(customerProduct.customerId, mapping.customerId),
-                eq(customerProduct.productInternalId, storedProduct.internalId),
-                isNull(customerProduct.subscriptionId),
-                isNull(customerProduct.endedAt),
-              ),
-              orderBy(fields) {
-                return [desc(fields.createdAt)];
-              },
-            })
-          : null;
-
-        if (!pendingCustomerProduct && storedProduct && normalizedPlan) {
-          pendingCustomerProduct = await insertCustomerProductRecord(ctx.database, {
+    // Use existing subscription or create a new one
+    const targetSub =
+      existingSub ??
+      (storedProduct && normalizedPlan
+        ? await insertSubscriptionRecord(ctx.database, {
             currentPeriodEndAt: action.data.subscription.currentPeriodEndAt ?? null,
             currentPeriodStartAt: action.data.subscription.currentPeriodStartAt ?? null,
-            customerId: mapping.customerId,
+            customerId: customerRow.id,
             planFeatures: normalizedPlan.includes,
-            priceId: storedProduct.priceId,
             productInternalId: storedProduct.internalId,
             providerId: ctx.provider.id,
+            providerData,
             startedAt: action.data.subscription.currentPeriodStartAt ?? new Date(),
             status: action.data.subscription.status,
             trialEndsAt: null,
-          });
-        }
-      }
+          })
+        : null);
 
-      customerProductId = pendingCustomerProduct?.id ?? null;
+    if (!targetSub) {
+      return customerRow.id;
     }
 
-    const subscriptionRow = await upsertSubscriptionRecord(ctx.database, {
-      customerId: mapping.customerId,
-      customerProductId,
-      providerId: ctx.provider.id,
-      subscription: action.data.subscription,
+    // Sync subscription state from provider
+    await syncSubscriptionFromProvider(ctx.database, {
+      subscriptionId: targetSub.id,
+      providerSubscription: action.data.subscription,
+    });
+
+    // Update provider data on the subscription
+    await syncSubscriptionBillingState(ctx.database, {
+      subscriptionId: targetSub.id,
+      providerData,
     });
 
     // Detect a genuine resume: cancel_at_period_end went from true → false
@@ -509,234 +463,186 @@ async function applyAction(ctx: PayKitContext, action: WebhookApplyAction): Prom
     // that is NOT a resume, it's a schedule taking over lifecycle management.
     const isGenuineResume =
       storedProduct &&
-      existingSubscription?.cancelAtPeriodEnd &&
+      existingSub?.cancelAtPeriodEnd &&
       !action.data.subscription.cancelAtPeriodEnd &&
       !action.data.subscription.providerSubscriptionScheduleId;
 
     if (isGenuineResume) {
-      await deleteScheduledCustomerProductsInGroup(ctx.database, {
-        customerId: mapping.customerId,
+      await deleteScheduledSubscriptionsInGroup(ctx.database, {
+        customerId: customerRow.id,
         group: storedProduct.group,
-        providerId: ctx.provider.id,
       });
 
-      const activeProduct = await getActiveCustomerProductInGroup(ctx.database, {
-        customerId: mapping.customerId,
+      const activeSub = await getActiveSubscriptionInGroup(ctx.database, {
+        customerId: customerRow.id,
         group: storedProduct.group,
-        providerId: ctx.provider.id,
       });
-      if (activeProduct) {
-        await replaceCurrentProductSchedule(ctx.database, {
-          customerProductId: activeProduct.id,
+      if (activeSub) {
+        await replaceSubscriptionSchedule(ctx.database, {
+          subscriptionId: activeSub.id,
           scheduledProductId: null,
         });
       }
     }
 
-    if (customerProductId) {
-      await linkCustomerProductSubscription(ctx.database, {
-        customerProductId,
-        subscriptionId: subscriptionRow.id,
-      });
-      await syncCustomerProductFromSubscription(ctx.database, {
-        customerProductId,
-        subscription: action.data.subscription,
-      });
-    }
-
     if (storedProduct) {
-      const activeProduct = await getActiveCustomerProductInGroup(ctx.database, {
-        customerId: mapping.customerId,
+      const activeSub = await getActiveSubscriptionInGroup(ctx.database, {
+        customerId: customerRow.id,
         group: storedProduct.group,
-        providerId: ctx.provider.id,
       });
 
       const subStatus = action.data.subscription.status;
       const isTerminal =
         subStatus === "canceled" || subStatus === "ended" || subStatus === "unpaid";
 
-      if (action.data.subscription.cancelAtPeriodEnd && activeProduct) {
-        await scheduleCustomerProductCancellation(ctx.database, {
+      if (action.data.subscription.cancelAtPeriodEnd && activeSub) {
+        await scheduleSubscriptionCancellation(ctx.database, {
           canceledAt: action.data.subscription.canceledAt ?? new Date(),
           currentPeriodEndAt:
-            action.data.subscription.currentPeriodEndAt ?? activeProduct.currentPeriodEndAt,
-          customerProductId: activeProduct.id,
+            action.data.subscription.currentPeriodEndAt ?? activeSub.currentPeriodEndAt,
+          subscriptionId: activeSub.id,
         });
 
         await ensureScheduledDefaultPlan(ctx, {
-          customerId: mapping.customerId,
+          customerId: customerRow.id,
           group: storedProduct.group,
           startsAt:
             action.data.subscription.currentPeriodEndAt ??
-            activeProduct.currentPeriodEndAt ??
+            activeSub.currentPeriodEndAt ??
             new Date(),
         });
       }
 
       // When the subscription reaches a terminal state (canceled/ended),
-      // end the active product and activate the scheduled plan. This handles
+      // end the active subscription and activate the scheduled plan. This handles
       // the case where Stripe sends subscription.updated with status=canceled
       // instead of subscription.deleted (e.g. when using cancel_at).
-      if (isTerminal && activeProduct) {
+      if (isTerminal && activeSub) {
         const effectiveDate = action.data.subscription.currentPeriodEndAt ?? new Date();
 
-        await endCustomerProducts(ctx.database, [activeProduct.id], {
+        await endSubscriptions(ctx.database, [activeSub.id], {
           canceled: true,
           endedAt: effectiveDate,
           status: "canceled",
         });
 
         await ensureScheduledDefaultPlan(ctx, {
-          customerId: mapping.customerId,
+          customerId: customerRow.id,
           group: storedProduct.group,
           startsAt: effectiveDate,
         });
 
-        const activatedId = await activateScheduledCustomerProductForGroup(ctx, {
-          customerId: mapping.customerId,
+        await activateScheduledSubscriptionForGroup(ctx, {
+          customerId: customerRow.id,
           productGroup: storedProduct.group,
-          subscriptionId: null,
           subscriptionCurrentPeriodStartAt: effectiveDate,
           subscriptionStatus: "active",
         });
-
-        if (activatedId) {
-          await linkCustomerProductSubscription(ctx.database, {
-            customerProductId: activatedId,
-            subscriptionId: null,
-          });
-        }
       } else {
-        const activatedCustomerProductId = await activateScheduledCustomerProductForGroup(ctx, {
-          customerId: mapping.customerId,
+        const activatedSubId = await activateScheduledSubscriptionForGroup(ctx, {
+          customerId: customerRow.id,
           productGroup: storedProduct.group,
           productInternalId: storedProduct.internalId,
           subscriptionCurrentPeriodEndAt: action.data.subscription.currentPeriodEndAt,
           subscriptionCurrentPeriodStartAt: action.data.subscription.currentPeriodStartAt,
-          subscriptionId: subscriptionRow.id,
           subscriptionStatus: action.data.subscription.status,
+          providerId: ctx.provider.id,
+          providerData,
         });
 
-        if (activatedCustomerProductId) {
-          await linkCustomerProductSubscription(ctx.database, {
-            customerProductId: activatedCustomerProductId,
-            subscriptionId: subscriptionRow.id,
-          });
-          await syncCustomerProductFromSubscription(ctx.database, {
-            customerProductId: activatedCustomerProductId,
-            subscription: action.data.subscription,
+        if (activatedSubId) {
+          await syncSubscriptionFromProvider(ctx.database, {
+            subscriptionId: activatedSubId,
+            providerSubscription: action.data.subscription,
           });
         }
       }
     }
 
-    return mapping.customerId;
+    return customerRow.id;
   }
 
   if (action.type === "subscription.delete") {
-    const mapping = await getProviderCustomerByProviderCustomerId(ctx.database, {
+    const customerRow = await findCustomerByProviderCustomerId(ctx.database, {
       providerCustomerId: action.data.providerCustomerId,
       providerId: ctx.provider.id,
     });
-    if (!mapping) {
+    if (!customerRow) {
       return null;
     }
 
-    const existingSubscription = await getSubscriptionByProviderId(ctx.database, {
+    const existingSub = await getSubscriptionByProviderSubscriptionId(ctx.database, {
       providerId: ctx.provider.id,
       providerSubscriptionId: action.data.providerSubscriptionId,
     });
-    if (!existingSubscription) {
-      return mapping.customerId;
+    if (!existingSub) {
+      return customerRow.id;
     }
 
-    const existingCustomerProduct = existingSubscription.customerProductId
-      ? await getCustomerProductById(ctx.database, existingSubscription.customerProductId)
-      : null;
+    const effectiveEndDate = existingSub.currentPeriodEndAt ?? new Date();
 
-    if (existingCustomerProduct) {
-      const effectiveEndDate = existingSubscription.currentPeriodEndAt ?? new Date();
-      await endCustomerProducts(ctx.database, [existingCustomerProduct.id], {
-        canceled: true,
-        endedAt: effectiveEndDate,
-        status: "canceled",
+    // End the subscription
+    await endSubscriptions(ctx.database, [existingSub.id], {
+      canceled: true,
+      endedAt: effectiveEndDate,
+      status: "canceled",
+    });
+
+    const existingStoredProduct = await ctx.database.query.product.findFirst({
+      where: eq(product.internalId, existingSub.productInternalId),
+    });
+    const productGroup = existingStoredProduct?.group ?? "";
+
+    if (productGroup) {
+      // Use the subscription's period end as the effective date — this is
+      // when Stripe considers the subscription ended, which may differ from
+      // wall-clock time (e.g. test clocks, delayed webhook delivery).
+      const effectiveDate = existingSub.currentPeriodEndAt ?? new Date();
+
+      await ensureScheduledDefaultPlan(ctx, {
+        customerId: customerRow.id,
+        group: productGroup,
+        startsAt: effectiveDate,
       });
 
-      const existingStoredProduct = await ctx.database.query.product.findFirst({
-        where: eq(product.internalId, existingCustomerProduct.productInternalId),
+      await activateScheduledSubscriptionForGroup(ctx, {
+        customerId: customerRow.id,
+        productGroup,
+        // Use the subscription's period end as the effective activation date
+        // so scheduled products are found correctly, but don't set period
+        // dates on the activated product (Free plans have no billing cycle).
+        subscriptionCurrentPeriodStartAt: effectiveDate,
+        subscriptionCurrentPeriodEndAt: null,
+        subscriptionStatus: "active",
       });
-      const productGroup = existingStoredProduct?.group ?? "";
-
-      if (productGroup) {
-        // Use the subscription's period end as the effective date — this is
-        // when Stripe considers the subscription ended, which may differ from
-        // wall-clock time (e.g. test clocks, delayed webhook delivery).
-        const effectiveDate = existingSubscription.currentPeriodEndAt ?? new Date();
-
-        await ensureScheduledDefaultPlan(ctx, {
-          customerId: mapping.customerId,
-          group: productGroup,
-          startsAt: effectiveDate,
-        });
-
-        const activatedCustomerProductId = await activateScheduledCustomerProductForGroup(ctx, {
-          customerId: mapping.customerId,
-          productGroup,
-          subscriptionId: null,
-          // Use the subscription's period end as the effective activation date
-          // so scheduled products are found correctly, but don't set period
-          // dates on the activated product (Free plans have no billing cycle).
-          subscriptionCurrentPeriodStartAt: effectiveDate,
-          subscriptionCurrentPeriodEndAt: null,
-          subscriptionStatus: "active",
-        });
-
-        if (activatedCustomerProductId) {
-          await linkCustomerProductSubscription(ctx.database, {
-            customerProductId: activatedCustomerProductId,
-            subscriptionId: null,
-          });
-        }
-      }
     }
 
-    await ctx.database
-      .update(subscriptionTable)
-      .set({
-        cancelAtPeriodEnd: false,
-        canceledAt: new Date(),
-        endedAt: new Date(),
-        status: "canceled",
-        updatedAt: new Date(),
-      })
-      .where(eq(subscriptionTable.id, existingSubscription.id));
-
-    return mapping.customerId;
+    return customerRow.id;
   }
 
   if (action.type === "invoice.upsert") {
-    const mapping = await getProviderCustomerByProviderCustomerId(ctx.database, {
+    const customerRow = await findCustomerByProviderCustomerId(ctx.database, {
       providerCustomerId: action.data.providerCustomerId,
       providerId: ctx.provider.id,
     });
-    if (!mapping) {
+    if (!customerRow) {
       return null;
     }
 
     const subscriptionRecord = action.data.providerSubscriptionId
-      ? await getSubscriptionByProviderId(ctx.database, {
+      ? await getSubscriptionByProviderSubscriptionId(ctx.database, {
           providerId: ctx.provider.id,
           providerSubscriptionId: action.data.providerSubscriptionId,
         })
       : null;
 
     await upsertInvoiceRecord(ctx.database, {
-      customerId: mapping.customerId,
+      customerId: customerRow.id,
       invoice: action.data.invoice,
       providerId: ctx.provider.id,
       subscriptionId: subscriptionRecord?.id ?? null,
     });
-    return mapping.customerId;
+    return customerRow.id;
   }
 
   return null;

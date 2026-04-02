@@ -10,29 +10,25 @@ import type {
   StripeSubscriptionAction,
 } from "../types/billing-plan";
 import { serializeBillingPlan } from "../types/billing-plan";
-import type { StoredSubscription } from "../types/models";
 import type { NormalizedPlan } from "../types/schema";
 import {
   buildSubscribeResult,
-  clearScheduledCustomerProductsInGroup,
+  clearScheduledSubscriptionsInGroup,
   createMetadata,
-  deleteScheduledCustomerProductsInGroup,
-  endCustomerProducts,
-  getActiveCustomerProductInGroup,
-  getScheduledCustomerProductsInGroup,
-  getSubscriptionByCustomerProductId,
-  getSubscriptionByProviderId,
-  insertCustomerProductRecord,
-  linkCustomerProductSubscription,
+  deleteScheduledSubscriptionsInGroup,
+  endSubscriptions,
+  getActiveSubscriptionInGroup,
+  getScheduledSubscriptionsInGroup,
+  getSubscriptionByProviderSubscriptionId,
+  insertSubscriptionRecord,
   linkMetadataToCheckoutSession,
-  replaceCurrentProductSchedule,
+  replaceSubscriptionSchedule,
   type SubscribeResult,
-  type CustomerProductWithCatalog,
-  scheduleCustomerProductCancellation,
-  syncCustomerProductBillingState,
-  syncCustomerProductFromSubscription,
+  type SubscriptionWithCatalog,
+  scheduleSubscriptionCancellation,
+  syncSubscriptionBillingState,
+  syncSubscriptionFromProvider,
   upsertInvoiceRecord,
-  upsertSubscriptionRecord,
 } from "./billing-service";
 import { upsertProviderCustomer } from "./customer-service";
 import { getDefaultPaymentMethod } from "./payment-method-service";
@@ -59,9 +55,8 @@ interface SubscribeContext {
   storedPlan: StoredProductWithPrice;
   providerCustomerId: string;
   defaultPaymentMethod: unknown;
-  activeProduct: CustomerProductWithCatalog | null;
-  activeSubscription: StoredSubscription | null;
-  scheduledProducts: readonly CustomerProductWithCatalog[];
+  activeSubscription: SubscriptionWithCatalog | null;
+  scheduledSubscriptions: readonly SubscriptionWithCatalog[];
   isFreeTarget: boolean;
   isPaidTarget: boolean;
   isUpgrade: boolean;
@@ -88,13 +83,13 @@ export async function subscribeToPlan(
     const paykitPlan = computeBillingPlan(subCtx);
 
     const action =
-      paykitPlan.updateProduct?.status === "ended"
+      paykitPlan.updateSubscription?.status === "ended"
         ? "switch"
-        : paykitPlan.updateProduct?.canceled
+        : paykitPlan.updateSubscription?.canceled
           ? subCtx.isFreeTarget
             ? "cancel-to-free"
             : "downgrade"
-          : paykitPlan.insertProducts.length > 0 && !paykitPlan.updateProduct
+          : paykitPlan.insertSubscriptions.length > 0 && !paykitPlan.updateSubscription
             ? "new"
             : subCtx.isUpgrade
               ? "upgrade"
@@ -131,49 +126,48 @@ async function setupSubscribeContext(
     throw new Error(`Plan "${input.planId}" not found. Run: paykitjs sync-products`);
   }
 
-  const isFreeTarget = storedPlan.priceId === null;
+  const isFreeTarget = storedPlan.priceAmount === null;
   const isPaidTarget = !isFreeTarget;
 
   if (isPaidTarget && !storedPlan.providerPriceId) {
     throw new Error(`Plan "${input.planId}" is not synced. Run: paykitjs sync-products`);
   }
 
-  const providerCustomer = await upsertProviderCustomer(ctx, { customerId: input.customerId });
+  const { providerCustomerId } = await upsertProviderCustomer(ctx, {
+    customerId: input.customerId,
+  });
   const defaultPaymentMethod = await getDefaultPaymentMethod(ctx.database, {
     customerId: input.customerId,
     providerId,
   });
 
-  const activeProduct = storedPlan.group
-    ? await getActiveCustomerProductInGroup(ctx.database, {
+  const activeSubscription = storedPlan.group
+    ? await getActiveSubscriptionInGroup(ctx.database, {
         customerId: input.customerId,
         group: storedPlan.group,
-        providerId,
       })
     : null;
 
-  const scheduledProducts = storedPlan.group
-    ? await getScheduledCustomerProductsInGroup(ctx.database, {
+  const scheduledSubscriptions = storedPlan.group
+    ? await getScheduledSubscriptionsInGroup(ctx.database, {
         customerId: input.customerId,
         group: storedPlan.group,
-        providerId,
       })
     : [];
 
-  const activeSubscription = activeProduct?.subscriptionId
-    ? await getSubscriptionByCustomerProductId(ctx.database, activeProduct.id)
-    : null;
+  const hasProviderSubscription =
+    activeSubscription?.providerData != null &&
+    typeof (activeSubscription.providerData as Record<string, unknown>).subscriptionId === "string";
 
-  const activeAmount = activeProduct?.priceAmount ?? 0;
+  const activeAmount = activeSubscription?.priceAmount ?? 0;
   const targetAmount = storedPlan.priceAmount ?? 0;
   const isUpgrade =
-    activeProduct != null && activeSubscription != null && targetAmount > activeAmount;
+    activeSubscription != null && hasProviderSubscription && targetAmount > activeAmount;
 
   const shouldUseCheckout =
     isPaidTarget && (input.forceCheckout === true || defaultPaymentMethod == null);
 
   return {
-    activeProduct,
     activeSubscription,
     cancelUrl: input.cancelUrl,
     customerId: input.customerId,
@@ -183,9 +177,9 @@ async function setupSubscribeContext(
     isUpgrade,
     normalizedPlan,
     prorationBehavior: input.prorationBehavior ?? "always_invoice",
-    providerCustomerId: providerCustomer.providerCustomerId,
+    providerCustomerId,
     providerId,
-    scheduledProducts,
+    scheduledSubscriptions,
     shouldUseCheckout,
     storedPlan,
     successUrl: input.successUrl,
@@ -198,73 +192,23 @@ async function setupSubscribeContext(
 // ---------------------------------------------------------------------------
 
 function computeBillingPlan(subCtx: SubscribeContext): PayKitBillingPlan {
-  const { activeProduct, activeSubscription, scheduledProducts, storedPlan, normalizedPlan } =
-    subCtx;
+  const { activeSubscription, scheduledSubscriptions, storedPlan, normalizedPlan } = subCtx;
   const now = new Date();
+
+  const hasProviderSubscription =
+    activeSubscription?.providerData != null &&
+    typeof (activeSubscription.providerData as Record<string, unknown>).subscriptionId === "string";
 
   const basePlan: PayKitBillingPlan = {
     clearScheduledInGroup: false,
     customerId: subCtx.customerId,
     deleteScheduledInGroup: false,
     group: storedPlan.group,
-    insertProducts: [],
-    updateProduct: null,
+    insertSubscriptions: [],
+    updateSubscription: null,
   };
 
-  // --- No active product: fresh subscription ---
-  if (!activeProduct) {
-    const status = subCtx.isFreeTarget
-      ? "active"
-      : subCtx.trialDays && subCtx.trialDays > 0
-        ? "trialing"
-        : "active";
-
-    const trialEndsAt =
-      subCtx.trialDays && subCtx.trialDays > 0
-        ? new Date(now.getTime() + subCtx.trialDays * 24 * 60 * 60 * 1000)
-        : null;
-
-    return {
-      ...basePlan,
-      insertProducts: [
-        {
-          customerId: subCtx.customerId,
-          planFeatures: normalizedPlan.includes,
-          priceId: storedPlan.priceId,
-          productInternalId: storedPlan.internalId,
-          providerId: subCtx.providerId,
-          startedAt: now,
-          status,
-          trialEndsAt,
-        },
-      ],
-    };
-  }
-
-  // --- Same plan: resume or noop ---
-  if (activeProduct.planId === storedPlan.id) {
-    const hasPendingChange = scheduledProducts.length > 0 || activeProduct.canceled;
-
-    if (!activeSubscription || !hasPendingChange) {
-      return basePlan; // noop
-    }
-
-    // Resume: clear cancellation + delete scheduled products
-    return {
-      ...basePlan,
-      deleteScheduledInGroup: true,
-      updateProduct: {
-        canceled: false,
-        canceledAt: null,
-        customerProductId: activeProduct.id,
-        endedAt: null,
-        scheduledProductId: null,
-        status: activeProduct.status,
-      },
-    };
-  }
-
-  // --- No active subscription (free→paid or free→free transition) ---
+  // --- No active subscription: fresh subscription ---
   if (!activeSubscription) {
     const status = subCtx.isFreeTarget
       ? "active"
@@ -279,11 +223,10 @@ function computeBillingPlan(subCtx: SubscribeContext): PayKitBillingPlan {
 
     return {
       ...basePlan,
-      insertProducts: [
+      insertSubscriptions: [
         {
           customerId: subCtx.customerId,
           planFeatures: normalizedPlan.includes,
-          priceId: storedPlan.priceId,
           productInternalId: storedPlan.internalId,
           providerId: subCtx.providerId,
           startedAt: now,
@@ -291,10 +234,62 @@ function computeBillingPlan(subCtx: SubscribeContext): PayKitBillingPlan {
           trialEndsAt,
         },
       ],
-      updateProduct: {
+    };
+  }
+
+  // --- Same plan: resume or noop ---
+  if (activeSubscription.planId === storedPlan.id) {
+    const hasPendingChange = scheduledSubscriptions.length > 0 || activeSubscription.canceled;
+
+    if (!hasProviderSubscription || !hasPendingChange) {
+      return basePlan; // noop
+    }
+
+    // Resume: clear cancellation + delete scheduled subscriptions
+    return {
+      ...basePlan,
+      deleteScheduledInGroup: true,
+      updateSubscription: {
         canceled: false,
         canceledAt: null,
-        customerProductId: activeProduct.id,
+        subscriptionId: activeSubscription.id,
+        endedAt: null,
+        scheduledProductId: null,
+        status: activeSubscription.status,
+      },
+    };
+  }
+
+  // --- No provider subscription (free→paid or free→free transition) ---
+  if (!hasProviderSubscription) {
+    const status = subCtx.isFreeTarget
+      ? "active"
+      : subCtx.trialDays && subCtx.trialDays > 0
+        ? "trialing"
+        : "active";
+
+    const trialEndsAt =
+      subCtx.trialDays && subCtx.trialDays > 0
+        ? new Date(now.getTime() + subCtx.trialDays * 24 * 60 * 60 * 1000)
+        : null;
+
+    return {
+      ...basePlan,
+      insertSubscriptions: [
+        {
+          customerId: subCtx.customerId,
+          planFeatures: normalizedPlan.includes,
+          productInternalId: storedPlan.internalId,
+          providerId: subCtx.providerId,
+          startedAt: now,
+          status,
+          trialEndsAt,
+        },
+      ],
+      updateSubscription: {
+        canceled: false,
+        canceledAt: null,
+        subscriptionId: activeSubscription.id,
         endedAt: now,
         status: "ended",
       },
@@ -303,30 +298,28 @@ function computeBillingPlan(subCtx: SubscribeContext): PayKitBillingPlan {
 
   // --- Downgrade or cancel-to-free (schedule at period end) ---
   if (subCtx.isFreeTarget || !subCtx.isUpgrade) {
-    const currentPeriodEndAt =
-      activeSubscription.currentPeriodEndAt ?? activeProduct.currentPeriodEndAt;
+    const currentPeriodEndAt = activeSubscription.currentPeriodEndAt;
 
     return {
       ...basePlan,
       clearScheduledInGroup: true,
-      insertProducts: [
+      insertSubscriptions: [
         {
           customerId: subCtx.customerId,
           planFeatures: normalizedPlan.includes,
-          priceId: storedPlan.priceId,
           productInternalId: storedPlan.internalId,
           providerId: subCtx.providerId,
           startedAt: currentPeriodEndAt ?? null,
           status: "scheduled",
         },
       ],
-      updateProduct: {
+      updateSubscription: {
         canceled: true,
         canceledAt: now,
-        customerProductId: activeProduct.id,
+        subscriptionId: activeSubscription.id,
         endedAt: currentPeriodEndAt ?? null,
         scheduledProductId: storedPlan.internalId,
-        status: activeProduct.status,
+        status: activeSubscription.status,
       },
     };
   }
@@ -335,21 +328,20 @@ function computeBillingPlan(subCtx: SubscribeContext): PayKitBillingPlan {
   return {
     ...basePlan,
     deleteScheduledInGroup: true,
-    insertProducts: [
+    insertSubscriptions: [
       {
         customerId: subCtx.customerId,
         planFeatures: normalizedPlan.includes,
-        priceId: storedPlan.priceId,
         productInternalId: storedPlan.internalId,
         providerId: subCtx.providerId,
         startedAt: now,
         status: "active",
       },
     ],
-    updateProduct: {
+    updateSubscription: {
       canceled: false,
       canceledAt: null,
-      customerProductId: activeProduct.id,
+      subscriptionId: activeSubscription.id,
       endedAt: now,
       status: "ended",
     },
@@ -359,6 +351,14 @@ function computeBillingPlan(subCtx: SubscribeContext): PayKitBillingPlan {
 // ---------------------------------------------------------------------------
 // Stage 3: Evaluate — translate PayKit plan to Stripe actions
 // ---------------------------------------------------------------------------
+
+function getProviderSubId(sub: SubscriptionWithCatalog): string {
+  return (sub.providerData as Record<string, unknown>)?.subscriptionId as string;
+}
+
+function getProviderSubScheduleId(sub: SubscriptionWithCatalog): string | null {
+  return ((sub.providerData as Record<string, unknown>)?.subscriptionScheduleId as string) ?? null;
+}
 
 function evaluateStripePlan(
   subCtx: SubscribeContext,
@@ -370,59 +370,65 @@ function evaluateStripePlan(
     subscriptionAction: { type: "none" },
   };
 
+  const { activeSubscription } = subCtx;
+  const hasProviderSub =
+    activeSubscription?.providerData != null &&
+    typeof (activeSubscription.providerData as Record<string, unknown>).subscriptionId === "string";
+
   // Free plan only — no Stripe calls
-  if (subCtx.isFreeTarget && !subCtx.activeSubscription) {
+  if (subCtx.isFreeTarget && !hasProviderSub) {
     return noAction;
   }
 
   // Noop (same plan, no changes)
-  if (paykitPlan.insertProducts.length === 0 && paykitPlan.updateProduct === null) {
+  if (paykitPlan.insertSubscriptions.length === 0 && paykitPlan.updateSubscription === null) {
     return noAction;
   }
 
-  const { activeProduct, activeSubscription } = subCtx;
-
   // --- Resume ---
-  if (activeProduct && activeProduct.planId === subCtx.storedPlan.id && paykitPlan.updateProduct) {
+  if (
+    activeSubscription &&
+    activeSubscription.planId === subCtx.storedPlan.id &&
+    paykitPlan.updateSubscription
+  ) {
     return {
       ...noAction,
       subscriptionAction: {
-        providerSubscriptionId: activeSubscription!.providerSubscriptionId,
-        providerSubscriptionScheduleId: activeSubscription!.providerSubscriptionScheduleId,
+        providerSubscriptionId: getProviderSubId(activeSubscription),
+        providerSubscriptionScheduleId: getProviderSubScheduleId(activeSubscription),
         type: "resume",
       },
     };
   }
 
-  // --- Cancel to free (with active subscription) ---
-  if (subCtx.isFreeTarget && activeSubscription) {
+  // --- Cancel to free (with provider subscription) ---
+  if (subCtx.isFreeTarget && activeSubscription && hasProviderSub) {
     return {
       ...noAction,
       subscriptionAction: {
-        currentPeriodEndAt:
-          activeSubscription.currentPeriodEndAt ?? activeProduct?.currentPeriodEndAt,
-        providerSubscriptionId: activeSubscription.providerSubscriptionId,
-        providerSubscriptionScheduleId: activeSubscription.providerSubscriptionScheduleId,
+        currentPeriodEndAt: activeSubscription.currentPeriodEndAt,
+        providerSubscriptionId: getProviderSubId(activeSubscription),
+        providerSubscriptionScheduleId: getProviderSubScheduleId(activeSubscription),
         type: "cancel",
       },
     };
   }
 
   // --- Downgrade (schedule change at period end) ---
-  if (activeSubscription && !subCtx.isUpgrade && !subCtx.isFreeTarget) {
+  if (activeSubscription && hasProviderSub && !subCtx.isUpgrade && !subCtx.isFreeTarget) {
     return {
       ...noAction,
       subscriptionAction: {
         providerPriceId: subCtx.storedPlan.providerPriceId!,
-        providerSubscriptionId: activeSubscription.providerSubscriptionId,
-        providerSubscriptionScheduleId: activeSubscription.providerSubscriptionScheduleId,
+        providerSubscriptionId: getProviderSubId(activeSubscription),
+        providerSubscriptionScheduleId: getProviderSubScheduleId(activeSubscription),
         type: "schedule_change",
       },
     };
   }
 
   // --- Upgrade with existing subscription ---
-  if (activeSubscription && subCtx.isUpgrade) {
+  if (activeSubscription && hasProviderSub && subCtx.isUpgrade) {
     if (subCtx.shouldUseCheckout) {
       // Checkout creates a new subscription — cancel the old one after checkout succeeds.
       return {
@@ -430,8 +436,8 @@ function evaluateStripePlan(
         checkoutAction: buildCheckoutAction(subCtx),
         subscriptionAction: {
           currentPeriodEndAt: activeSubscription.currentPeriodEndAt,
-          providerSubscriptionId: activeSubscription.providerSubscriptionId,
-          providerSubscriptionScheduleId: activeSubscription.providerSubscriptionScheduleId,
+          providerSubscriptionId: getProviderSubId(activeSubscription),
+          providerSubscriptionScheduleId: getProviderSubScheduleId(activeSubscription),
           type: "cancel",
         },
       };
@@ -441,7 +447,7 @@ function evaluateStripePlan(
       subscriptionAction: {
         prorationBehavior: subCtx.prorationBehavior,
         providerPriceId: subCtx.storedPlan.providerPriceId!,
-        providerSubscriptionId: activeSubscription.providerSubscriptionId,
+        providerSubscriptionId: getProviderSubId(activeSubscription),
         type: "update",
       },
     };
@@ -626,61 +632,59 @@ export async function executePayKitPlan(
   options?: { deferred?: boolean },
 ): Promise<void> {
   await ctx.database.transaction(async (tx) => {
-    // 1. Clear scheduled products in group
+    // 1. Clear scheduled subscriptions in group
     if (plan.clearScheduledInGroup && plan.group) {
-      await clearScheduledCustomerProductsInGroup(tx, {
+      await clearScheduledSubscriptionsInGroup(tx, {
         customerId: plan.customerId,
         group: plan.group,
-        providerId,
       });
     }
 
-    // 2. Delete scheduled products in group
+    // 2. Delete scheduled subscriptions in group
     if (plan.deleteScheduledInGroup && plan.group) {
-      await deleteScheduledCustomerProductsInGroup(tx, {
+      await deleteScheduledSubscriptionsInGroup(tx, {
         customerId: plan.customerId,
         group: plan.group,
-        providerId,
       });
     }
 
-    // 3. Update existing product
-    if (plan.updateProduct) {
-      const upd = plan.updateProduct;
+    // 3. Update existing subscription
+    if (plan.updateSubscription) {
+      const upd = plan.updateSubscription;
 
       if (upd.status === "ended") {
-        await endCustomerProducts(tx, [upd.customerProductId], {
+        await endSubscriptions(tx, [upd.subscriptionId], {
           canceled: upd.canceled,
           endedAt: upd.endedAt ?? new Date(),
           status: "ended",
         });
       } else if (upd.canceled) {
-        await scheduleCustomerProductCancellation(tx, {
+        await scheduleSubscriptionCancellation(tx, {
           canceledAt: upd.canceledAt ?? new Date(),
           currentPeriodEndAt: upd.endedAt,
-          customerProductId: upd.customerProductId,
+          subscriptionId: upd.subscriptionId,
         });
         if (upd.scheduledProductId !== undefined) {
-          await replaceCurrentProductSchedule(tx, {
-            customerProductId: upd.customerProductId,
+          await replaceSubscriptionSchedule(tx, {
+            subscriptionId: upd.subscriptionId,
             scheduledProductId: upd.scheduledProductId,
           });
         }
       } else {
         // Resume: clear cancellation
-        await syncCustomerProductFromSubscription(tx, {
-          customerProductId: upd.customerProductId,
-          subscription: stripeResult.subscription
+        await syncSubscriptionFromProvider(tx, {
+          subscriptionId: upd.subscriptionId,
+          providerSubscription: stripeResult.subscription
             ? stripeResult.subscription
             : { cancelAtPeriodEnd: false, providerSubscriptionId: "", status: upd.status },
         });
-        await replaceCurrentProductSchedule(tx, {
-          customerProductId: upd.customerProductId,
+        await replaceSubscriptionSchedule(tx, {
+          subscriptionId: upd.subscriptionId,
           scheduledProductId: null,
         });
         if (stripeResult.subscription) {
-          await syncCustomerProductBillingState(tx, {
-            customerProductId: upd.customerProductId,
+          await syncSubscriptionBillingState(tx, {
+            subscriptionId: upd.subscriptionId,
             currentPeriodEndAt: stripeResult.subscription.currentPeriodEndAt,
             currentPeriodStartAt: stripeResult.subscription.currentPeriodStartAt,
             status: stripeResult.subscription.status,
@@ -689,11 +693,11 @@ export async function executePayKitPlan(
       }
     }
 
-    // 4. Insert new products and link subscriptions/invoices
-    for (const insertOp of plan.insertProducts) {
-      // Scheduled products keep their own status and period dates — the Stripe
+    // 4. Insert new subscriptions and link invoices
+    for (const insertOp of plan.insertSubscriptions) {
+      // Scheduled subscriptions keep their own status and period dates — the Stripe
       // result describes the *existing* subscription (e.g. still "active" after
-      // cancel), not the future scheduled product.
+      // cancel), not the future scheduled subscription.
       const isScheduled = insertOp.status === "scheduled";
       const periodStart = isScheduled
         ? (insertOp.currentPeriodStartAt ?? null)
@@ -707,65 +711,61 @@ export async function executePayKitPlan(
         ? insertOp.status
         : (stripeResult.subscription?.status ?? insertOp.status);
 
+      // Build providerData from the Stripe result for non-scheduled subscriptions
+      const providerData =
+        !isScheduled && stripeResult.subscription
+          ? {
+              subscriptionId: stripeResult.subscription.providerSubscriptionId,
+              subscriptionScheduleId:
+                stripeResult.subscription.providerSubscriptionScheduleId ?? null,
+            }
+          : null;
+
       // When a deferred checkout completes, the subscription.created webhook may
-      // have already arrived and created the customer product + subscription.
+      // have already arrived and created the subscription record.
       // Detect this and reuse the existing row instead of inserting a duplicate.
       // Only applies in deferred (webhook) context — direct path always inserts.
-      let customerProductRow: { id: string } | null = null;
+      let subscriptionRow: { id: string } | null = null;
       if (options?.deferred && !isScheduled && stripeResult.subscription) {
-        const existingSub = await getSubscriptionByProviderId(tx, {
+        const existingSub = await getSubscriptionByProviderSubscriptionId(tx, {
           providerId,
           providerSubscriptionId: stripeResult.subscription.providerSubscriptionId,
         });
-        if (existingSub?.customerProductId) {
-          customerProductRow = { id: existingSub.customerProductId };
-          await syncCustomerProductBillingState(tx, {
-            customerProductId: existingSub.customerProductId,
+        if (existingSub) {
+          subscriptionRow = { id: existingSub.id };
+          await syncSubscriptionBillingState(tx, {
+            subscriptionId: existingSub.id,
             currentPeriodEndAt: periodEnd,
             currentPeriodStartAt: periodStart,
+            providerData,
             status,
           });
         }
       }
 
-      if (!customerProductRow) {
-        customerProductRow = await insertCustomerProductRecord(tx, {
+      if (!subscriptionRow) {
+        subscriptionRow = await insertSubscriptionRecord(tx, {
           currentPeriodEndAt: periodEnd,
           currentPeriodStartAt: periodStart,
           customerId: insertOp.customerId,
           planFeatures: insertOp.planFeatures,
-          priceId: insertOp.priceId,
           productInternalId: insertOp.productInternalId,
-          providerId: insertOp.providerId,
+          providerId,
+          providerData,
           startedAt: insertOp.startedAt,
           status,
-          subscriptionId: insertOp.subscriptionId ?? null,
           trialEndsAt: insertOp.trialEndsAt ?? null,
         });
       }
 
-      // Only link Stripe subscription/invoice to non-scheduled products — scheduled
-      // products will get their own subscription (if any) when they activate.
-      if (stripeResult.subscription && !isScheduled) {
-        const subscriptionRow = await upsertSubscriptionRecord(tx, {
+      // Link invoice to the subscription record
+      if (stripeResult.subscription && stripeResult.invoice && !isScheduled) {
+        await upsertInvoiceRecord(tx, {
           customerId: insertOp.customerId,
-          customerProductId: customerProductRow.id,
+          invoice: stripeResult.invoice,
           providerId,
-          subscription: stripeResult.subscription,
-        });
-        await linkCustomerProductSubscription(tx, {
-          customerProductId: customerProductRow.id,
           subscriptionId: subscriptionRow.id,
         });
-
-        if (stripeResult.invoice) {
-          await upsertInvoiceRecord(tx, {
-            customerId: insertOp.customerId,
-            invoice: stripeResult.invoice,
-            providerId,
-            subscriptionId: subscriptionRow.id,
-          });
-        }
       }
     }
   });

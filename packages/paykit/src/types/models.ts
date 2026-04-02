@@ -3,17 +3,10 @@ export interface Customer {
   email: string | null;
   name: string | null;
   metadata: Record<string, string> | null;
+  provider: Record<string, { id: string }>;
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
-}
-
-export interface InternalProviderCustomer {
-  id: string;
-  customerId: string;
-  providerId: string;
-  providerCustomerId: string;
-  createdAt: Date;
 }
 
 export interface StoredFeature {
@@ -30,15 +23,9 @@ export interface StoredProduct {
   name: string;
   group: string;
   isDefault: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface StoredPrice {
-  id: string;
-  productInternalId: string;
-  amount: number;
-  interval: string;
+  priceAmount: number | null;
+  priceInterval: string | null;
+  provider: Record<string, { productId: string; priceId: string | null }>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -53,29 +40,15 @@ export interface StoredProductFeature {
   updatedAt: Date;
 }
 
-export interface StoredProviderProduct {
-  productInternalId: string;
-  providerId: string;
-  providerProductId: string;
-  createdAt: Date;
-}
-
-export interface StoredProviderPrice {
-  priceId: string;
-  providerId: string;
-  providerPriceId: string;
-  createdAt: Date;
-}
-
-export interface StoredCustomerProduct {
+export interface StoredSubscription {
   id: string;
   customerId: string;
   productInternalId: string;
-  subscriptionId: string | null;
-  providerId: string;
-  providerCheckoutSessionId: string | null;
+  providerId: string | null;
+  providerData: Record<string, unknown> | null;
   status: string;
   canceled: boolean;
+  cancelAtPeriodEnd: boolean;
   startedAt: Date | null;
   trialEndsAt: Date | null;
   currentPeriodStartAt: Date | null;
@@ -88,33 +61,18 @@ export interface StoredCustomerProduct {
   updatedAt: Date;
 }
 
-export interface StoredSubscription {
-  id: string;
-  customerId: string;
-  customerProductId: string | null;
-  providerId: string;
-  providerSubscriptionId: string;
-  providerSubscriptionScheduleId: string | null;
-  status: string;
-  cancelAtPeriodEnd: boolean;
-  currentPeriodStartAt: Date | null;
-  currentPeriodEndAt: Date | null;
-  canceledAt: Date | null;
-  endedAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
 export interface StoredInvoice {
   id: string;
   customerId: string;
   subscriptionId: string | null;
-  providerId: string;
-  providerInvoiceId: string;
+  type: string;
   status: string;
+  amount: number;
   currency: string;
-  totalAmount: number;
+  description: string | null;
   hostedUrl: string | null;
+  providerId: string;
+  providerData: Record<string, unknown>;
   periodStartAt: Date | null;
   periodEndAt: Date | null;
   createdAt: Date;

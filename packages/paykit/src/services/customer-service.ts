@@ -2,30 +2,19 @@ import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import type { PayKitContext } from "../core/context";
 import { PayKitError } from "../core/errors";
-import { generateId } from "../core/utils";
 import type { PayKitDatabase } from "../database";
-import {
-  customer,
-  customerEntitlement,
-  customerPrice,
-  customerProduct,
-  invoice,
-  payment,
-  paymentMethod,
-  providerCustomer,
-  subscription,
-} from "../database/schema";
+import { customer, entitlement, invoice, paymentMethod, subscription } from "../database/schema";
 import type {
   CustomerEntitlement,
   CustomerSubscription,
   CustomerWithDetails,
   ListCustomersResult,
 } from "../types/instance";
-import type { Customer, InternalProviderCustomer } from "../types/models";
+import type { Customer } from "../types/models";
 import {
-  getActiveCustomerProductInGroup,
-  getScheduledCustomerProductsInGroup,
-  insertCustomerProductRecord,
+  getActiveSubscriptionInGroup,
+  getScheduledSubscriptionsInGroup,
+  insertSubscriptionRecord,
 } from "./billing-service";
 import { getLatestProductWithPrice } from "./product-service";
 
@@ -73,8 +62,6 @@ export async function syncCustomer(
       name: input.name ?? null,
       metadata: input.metadata ?? null,
       deletedAt: null,
-      createdAt: now,
-      updatedAt: now,
     })
     .returning();
 
@@ -99,21 +86,19 @@ export async function ensureDefaultPlansForCustomer(
       continue;
     }
 
-    const activeProduct = await getActiveCustomerProductInGroup(ctx.database, {
+    const activeSub = await getActiveSubscriptionInGroup(ctx.database, {
       customerId,
       group: defaultPlan.group,
-      providerId: ctx.provider.id,
     });
-    if (activeProduct) {
+    if (activeSub) {
       continue;
     }
 
-    const scheduledProducts = await getScheduledCustomerProductsInGroup(ctx.database, {
+    const scheduledSubs = await getScheduledSubscriptionsInGroup(ctx.database, {
       customerId,
       group: defaultPlan.group,
-      providerId: ctx.provider.id,
     });
-    if (scheduledProducts.length > 0) {
+    if (scheduledSubs.length > 0) {
       continue;
     }
 
@@ -125,18 +110,17 @@ export async function ensureDefaultPlansForCustomer(
       continue;
     }
 
-    if (storedPlan.priceId !== null) {
+    if (storedPlan.priceAmount !== null) {
       ctx.logger.warn(
         `Skipping default plan "${defaultPlan.id}" for customer "${customerId}" because paid default plans are not auto-attached yet.`,
       );
       continue;
     }
 
-    await insertCustomerProductRecord(ctx.database, {
+    await insertSubscriptionRecord(ctx.database, {
       customerId,
       planFeatures: defaultPlan.includes,
       productInternalId: storedPlan.internalId,
-      providerId: ctx.provider.id,
       startedAt: new Date(),
       status: "active",
     });
@@ -175,132 +159,105 @@ export async function getCustomerByIdOrThrow(
   return existingCustomer;
 }
 
-export async function getProviderCustomer(
-  database: PayKitDatabase,
-  input: { customerId: string; providerId: string },
-): Promise<InternalProviderCustomer | null> {
-  return (
-    (await database.query.providerCustomer.findFirst({
-      where: and(
-        eq(providerCustomer.customerId, input.customerId),
-        eq(providerCustomer.providerId, input.providerId),
-      ),
-    })) ?? null
-  );
+type ProviderCustomerMap = Record<string, { id: string }>;
+
+export function getProviderCustomerId(customerRow: Customer, providerId: string): string | null {
+  const providerMap = (customerRow.provider ?? {}) as ProviderCustomerMap;
+  return providerMap[providerId]?.id ?? null;
 }
 
-export async function getProviderCustomerByProviderCustomerId(
+export async function getProviderCustomerIdForCustomer(
+  database: PayKitDatabase,
+  input: { customerId: string; providerId: string },
+): Promise<string | null> {
+  const row = await database.query.customer.findFirst({
+    where: eq(customer.id, input.customerId),
+  });
+  if (!row) return null;
+  return getProviderCustomerId(row, input.providerId);
+}
+
+export async function findCustomerByProviderCustomerId(
   database: PayKitDatabase,
   input: { providerCustomerId: string; providerId: string },
-): Promise<InternalProviderCustomer | null> {
-  return (
-    (await database.query.providerCustomer.findFirst({
-      where: and(
-        eq(providerCustomer.providerId, input.providerId),
-        eq(providerCustomer.providerCustomerId, input.providerCustomerId),
-      ),
-    })) ?? null
-  );
+): Promise<Customer | null> {
+  const result = (await database.execute(sql`
+    select *
+    from paykit_customer
+    where provider->${input.providerId}->>'id' = ${input.providerCustomerId}
+    limit 1
+  `)) as unknown as { rows: Customer[] };
+  return result.rows[0] ?? null;
 }
 
 export async function upsertProviderCustomer(
   ctx: PayKitContext,
   input: { customerId: string },
-): Promise<InternalProviderCustomer> {
+): Promise<{ customerId: string; providerCustomerId: string }> {
   const providerId = ctx.provider.id;
 
-  return ctx.database.transaction(async (tx) => {
-    const existingCustomer = await getCustomerByIdOrThrow(tx, input.customerId);
+  const existingCustomer = await getCustomerByIdOrThrow(ctx.database, input.customerId);
+  const existingProviderCustomerId = getProviderCustomerId(existingCustomer, providerId);
 
-    const existing = await getProviderCustomer(tx, {
-      customerId: input.customerId,
-      providerId,
-    });
-    if (existing) {
-      return existing;
-    }
+  if (existingProviderCustomerId) {
+    return { customerId: input.customerId, providerCustomerId: existingProviderCustomerId };
+  }
 
-    const { providerCustomerId } = await ctx.stripe.upsertCustomer({
-      id: existingCustomer.id,
-      email: existingCustomer.email ?? undefined,
-      name: existingCustomer.name ?? undefined,
-      metadata: existingCustomer.metadata ?? undefined,
-    });
-
-    const rows = await tx
-      .insert(providerCustomer)
-      .values({
-        id: generateId("pa"),
-        customerId: existingCustomer.id,
-        providerId,
-        providerCustomerId,
-        createdAt: new Date(),
-      })
-      .returning();
-
-    const row = rows[0];
-    if (!row) {
-      throw new Error("Failed to create provider customer.");
-    }
-    return row;
+  const { providerCustomerId } = await ctx.stripe.upsertCustomer({
+    id: existingCustomer.id,
+    email: existingCustomer.email ?? undefined,
+    name: existingCustomer.name ?? undefined,
+    metadata: existingCustomer.metadata ?? undefined,
   });
+
+  const providerMap = (existingCustomer.provider ?? {}) as ProviderCustomerMap;
+  providerMap[providerId] = { id: providerCustomerId };
+
+  await ctx.database
+    .update(customer)
+    .set({ provider: providerMap, updatedAt: new Date() })
+    .where(eq(customer.id, input.customerId));
+
+  return { customerId: input.customerId, providerCustomerId };
 }
 
 export async function deleteCustomerFromDatabase(
   database: PayKitDatabase,
   customerId: string,
 ): Promise<void> {
-  // Order matters due to foreign key constraints
-  const customerProductIds = await database
-    .select({ id: customerProduct.id })
-    .from(customerProduct)
-    .where(eq(customerProduct.customerId, customerId));
-  const cpIds = customerProductIds.map((row) => row.id);
+  const subIds = await database
+    .select({ id: subscription.id })
+    .from(subscription)
+    .where(eq(subscription.customerId, customerId));
+  const sIds = subIds.map((row) => row.id);
 
-  if (cpIds.length > 0) {
-    await database
-      .delete(customerEntitlement)
-      .where(inArray(customerEntitlement.customerProductId, cpIds));
-    await database.delete(customerPrice).where(inArray(customerPrice.customerProductId, cpIds));
-    await database.delete(subscription).where(inArray(subscription.customerProductId, cpIds));
+  if (sIds.length > 0) {
+    await database.delete(entitlement).where(inArray(entitlement.subscriptionId, sIds));
   }
 
-  await database.delete(customerProduct).where(eq(customerProduct.customerId, customerId));
-  await database.delete(invoice).where(eq(invoice.customerId, customerId));
-  await database.delete(payment).where(eq(payment.customerId, customerId));
-  await database.delete(paymentMethod).where(eq(paymentMethod.customerId, customerId));
   await database.delete(subscription).where(eq(subscription.customerId, customerId));
-  await database.delete(providerCustomer).where(eq(providerCustomer.customerId, customerId));
+  await database.delete(invoice).where(eq(invoice.customerId, customerId));
+  await database.delete(paymentMethod).where(eq(paymentMethod.customerId, customerId));
   await database.delete(customer).where(eq(customer.id, customerId));
 }
 
 export async function hardDeleteCustomer(ctx: PayKitContext, customerId: string): Promise<void> {
-  await getCustomerByIdOrThrow(ctx.database, customerId);
+  const existingCustomer = await getCustomerByIdOrThrow(ctx.database, customerId);
 
-  // Cancel all active Stripe subscriptions and delete the Stripe customer
-  const providerRecord = await getProviderCustomer(ctx.database, {
-    customerId,
-    providerId: ctx.provider.id,
-  });
-
-  if (providerRecord) {
+  const providerCustomerId = getProviderCustomerId(existingCustomer, ctx.provider.id);
+  if (providerCustomerId) {
     try {
       const activeSubscriptions = await ctx.stripe.listActiveSubscriptions({
-        providerCustomerId: providerRecord.providerCustomerId,
+        providerCustomerId,
       });
       for (const sub of activeSubscriptions) {
         await ctx.stripe.cancelSubscription({
           providerSubscriptionId: sub.providerSubscriptionId,
         });
       }
-      await ctx.stripe.deleteCustomer({
-        providerCustomerId: providerRecord.providerCustomerId,
-      });
+      await ctx.stripe.deleteCustomer({ providerCustomerId });
     } catch (error) {
-      ctx.logger.error(
-        `Failed to clean up Stripe customer ${providerRecord.providerCustomerId}:`,
-        error,
-      );
+      ctx.logger.error(`Failed to clean up Stripe customer ${providerCustomerId}:`, error);
     }
   }
 
@@ -319,23 +276,21 @@ export async function listCustomers(
   const offset = input?.offset ?? 0;
   const planIds = input?.planIds;
 
-  // Build the base query for customers
   let customerRows: Customer[];
   let total: number;
 
   if (planIds && planIds.length > 0) {
-    // Filter by customers who have active subscriptions to specific plans
     const filteredResult = (await ctx.database.execute(sql`
       select distinct c.*
       from paykit_customer c
-      inner join paykit_customer_product cp on cp.customer_id = c.id
-      inner join paykit_product p on p.internal_id = cp.product_internal_id
+      inner join paykit_subscription s on s.customer_id = c.id
+      inner join paykit_product p on p.internal_id = s.product_internal_id
       where p.id in ${sql`(${sql.join(
         planIds.map((id) => sql`${id}`),
         sql`, `,
       )})`}
-        and cp.status in ('active', 'trialing', 'past_due')
-        and (cp.ended_at is null or cp.ended_at > now())
+        and s.status in ('active', 'trialing', 'past_due')
+        and (s.ended_at is null or s.ended_at > now())
         and c.deleted_at is null
       order by c.created_at desc
       limit ${limit}
@@ -346,14 +301,14 @@ export async function listCustomers(
     const countResult = (await ctx.database.execute(sql`
       select count(distinct c.id)::int as count
       from paykit_customer c
-      inner join paykit_customer_product cp on cp.customer_id = c.id
-      inner join paykit_product p on p.internal_id = cp.product_internal_id
+      inner join paykit_subscription s on s.customer_id = c.id
+      inner join paykit_product p on p.internal_id = s.product_internal_id
       where p.id in ${sql`(${sql.join(
         planIds.map((id) => sql`${id}`),
         sql`, `,
       )})`}
-        and cp.status in ('active', 'trialing', 'past_due')
-        and (cp.ended_at is null or cp.ended_at > now())
+        and s.status in ('active', 'trialing', 'past_due')
+        and (s.ended_at is null or s.ended_at > now())
         and c.deleted_at is null
     `)) as unknown as { rows: Array<{ count: number }> };
     total = countResult.rows[0]?.count ?? 0;
@@ -372,59 +327,52 @@ export async function listCustomers(
     });
   }
 
-  // Fetch subscriptions and entitlements for all returned customers
   const customerIds = customerRows.map((c) => c.id);
   const data: CustomerWithDetails[] = [];
 
   if (customerIds.length > 0) {
-    // Get subscriptions
     const subscriptionRows = (await ctx.database.execute(sql`
       select
-        cp.customer_id as "customerId",
+        s.customer_id as "customerId",
         p.id as "planId",
-        cp.status,
-        cp.canceled as "cancelAtPeriodEnd",
-        cp.current_period_start_at as "currentPeriodStart",
-        cp.current_period_end_at as "currentPeriodEnd"
-      from paykit_customer_product cp
-      inner join paykit_product p on p.internal_id = cp.product_internal_id
-      where cp.customer_id in ${sql`(${sql.join(
+        s.status,
+        s.cancel_at_period_end as "cancelAtPeriodEnd",
+        s.current_period_start_at as "currentPeriodStart",
+        s.current_period_end_at as "currentPeriodEnd"
+      from paykit_subscription s
+      inner join paykit_product p on p.internal_id = s.product_internal_id
+      where s.customer_id in ${sql`(${sql.join(
         customerIds.map((id) => sql`${id}`),
         sql`, `,
       )})`}
-        and cp.status in ('active', 'trialing', 'past_due', 'scheduled')
-        and (cp.ended_at is null or cp.ended_at > now())
-      order by cp.created_at desc
+        and s.status in ('active', 'trialing', 'past_due', 'scheduled')
+        and (s.ended_at is null or s.ended_at > now())
+      order by s.created_at desc
     `)) as unknown as {
       rows: Array<CustomerSubscription & { customerId: string }>;
     };
 
-    // Get entitlements
     const entitlementRows = (await ctx.database.execute(sql`
       select
-        ce.customer_id as "customerId",
-        ce.feature_id as "featureId",
-        ce.balance,
-        coalesce(pf."limit", 0) as "limit",
-        case when ce.unlimited then 0 else coalesce(pf."limit", 0) - ce.balance end as "usage",
-        ce.unlimited,
-        ce.next_reset_at as "nextResetAt"
-      from paykit_customer_entitlement ce
-      inner join paykit_customer_product cp on cp.id = ce.customer_product_id
-      left join paykit_product_feature pf
-        on pf.product_internal_id = cp.product_internal_id
-        and pf.feature_id = ce.feature_id
-      where ce.customer_id in ${sql`(${sql.join(
+        e.customer_id as "customerId",
+        e.feature_id as "featureId",
+        e.balance,
+        e."limit",
+        case when e."limit" is null then 0 else coalesce(e."limit", 0) - coalesce(e.balance, 0) end as "usage",
+        case when e."limit" is null then true else false end as "unlimited",
+        e.next_reset_at as "nextResetAt"
+      from paykit_entitlement e
+      inner join paykit_subscription s on s.id = e.subscription_id
+      where e.customer_id in ${sql`(${sql.join(
         customerIds.map((id) => sql`${id}`),
         sql`, `,
       )})`}
-        and cp.status in ('active', 'trialing', 'past_due')
-        and (cp.ended_at is null or cp.ended_at > now())
+        and s.status in ('active', 'trialing', 'past_due')
+        and (s.ended_at is null or s.ended_at > now())
     `)) as unknown as {
       rows: Array<CustomerEntitlement & { customerId: string }>;
     };
 
-    // Group by customer
     const subscriptionsByCustomer = new Map<string, CustomerSubscription[]>();
     for (const row of subscriptionRows) {
       const list = subscriptionsByCustomer.get(row.customerId) ?? [];

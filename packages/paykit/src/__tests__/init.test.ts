@@ -113,7 +113,6 @@ describe("paykit init", () => {
         'paykit_payment',
         'paykit_product',
         'paykit_price',
-        'paykit_provider_customer',
         'paykit_provider_price',
         'paykit_provider_product',
         'paykit_payment_method'
@@ -128,7 +127,6 @@ describe("paykit init", () => {
       "paykit_payment_method",
       "paykit_price",
       "paykit_product",
-      "paykit_provider_customer",
       "paykit_provider_price",
       "paykit_provider_product",
     ]);
