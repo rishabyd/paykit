@@ -95,6 +95,8 @@ export function createPayKit<const TOptions extends PayKitOptions>(
     get $context() {
       return getContext();
     },
+
+    $infer: undefined as never,
   };
 
   Object.defineProperty(paykit, payKitInstanceSymbol, {

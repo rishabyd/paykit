@@ -109,7 +109,9 @@ export interface PayKitPlanConfig<TId extends string = string> {
 
 export type PayKitPlan<TConfig extends PayKitPlanConfig = PayKitPlanConfig> = Readonly<
   Omit<TConfig, "includes"> & {
-    includes: readonly PayKitFeatureInclude[];
+    includes: TConfig["includes"] extends readonly PayKitFeatureInclude[]
+      ? TConfig["includes"]
+      : readonly PayKitFeatureInclude[];
   }
 >;
 
@@ -156,6 +158,20 @@ export type PlanIdFromPlans<TPlans> = TPlans extends readonly (infer TItem)[]
           : never
         : never
       : never
+    : never;
+
+type ExtractFeatureIds<TPlan> = TPlan extends {
+  includes: readonly (infer TInclude)[];
+}
+  ? TInclude extends { feature: { id: infer TId extends string } }
+    ? TId
+    : never
+  : never;
+
+export type FeatureIdFromPlans<TPlans> = TPlans extends readonly (infer TItem)[]
+  ? ExtractFeatureIds<TItem>
+  : TPlans extends Record<PropertyKey, unknown>
+    ? ExtractFeatureIds<TPlans[keyof TPlans]>
     : never;
 
 function defineHiddenBrand(target: object, symbol: symbol): void {

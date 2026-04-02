@@ -35,3 +35,5 @@ export const paykit = createPayKit({
     };
   },
 });
+
+export type PayKit = typeof paykit.$infer;

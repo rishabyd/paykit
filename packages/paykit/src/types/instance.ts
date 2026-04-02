@@ -1,13 +1,19 @@
 import type { CheckResult, ReportResult } from "../services/entitlement-service";
 import type { Customer } from "./models";
 import type { PayKitOptions } from "./options";
-import type { PlanIdFromPlans } from "./schema";
+import type { FeatureIdFromPlans, PlanIdFromPlans } from "./schema";
 
 type PlanIdFromOptions<TOptions extends PayKitOptions> = [
   PlanIdFromPlans<TOptions["plans"]>,
 ] extends [never]
   ? string
   : PlanIdFromPlans<TOptions["plans"]>;
+
+type FeatureIdFromOptions<TOptions extends PayKitOptions> = [
+  FeatureIdFromPlans<TOptions["plans"]>,
+] extends [never]
+  ? string
+  : FeatureIdFromPlans<TOptions["plans"]>;
 
 export type PayKitSubscribeInput<TOptions extends PayKitOptions = PayKitOptions> = {
   planId: PlanIdFromOptions<TOptions>;
@@ -91,11 +97,23 @@ export interface PayKitInstance<TOptions extends PayKitOptions = PayKitOptions> 
     planIds?: string[];
   }): Promise<ListCustomersResult>;
   subscribe(input: PayKitSubscribeInput<TOptions>): Promise<PayKitSubscribeResult>;
-  check(input: { customerId: string; featureId: string; required?: number }): Promise<CheckResult>;
-  report(input: { customerId: string; featureId: string; amount?: number }): Promise<ReportResult>;
+  check(input: {
+    customerId: string;
+    featureId: FeatureIdFromOptions<TOptions>;
+    required?: number;
+  }): Promise<CheckResult>;
+  report(input: {
+    customerId: string;
+    featureId: FeatureIdFromOptions<TOptions>;
+    amount?: number;
+  }): Promise<ReportResult>;
   handleWebhook(input: {
     body: string;
     headers: Record<string, string>;
   }): Promise<{ received: true }>;
   $context: Promise<unknown>;
+  $infer: {
+    planId: PlanIdFromOptions<TOptions>;
+    featureId: FeatureIdFromOptions<TOptions>;
+  };
 }

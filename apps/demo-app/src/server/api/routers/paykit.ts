@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "@/server/api/trpc";
 import { auth } from "@/server/auth";
-import { paykit } from "@/server/paykit";
+import { paykit, type PayKit } from "@/server/paykit";
 
 import type { PayKitContext } from "../../../../../../packages/paykit/src/core/context";
 import { product, subscription } from "../../../../../../packages/paykit/src/database/schema";
@@ -62,7 +62,7 @@ export const paykitRouter = createTRPCRouter({
       }
       return paykit.check({
         customerId: session.user.id,
-        featureId: input.featureId,
+        featureId: input.featureId as PayKit["featureId"],
       });
     }),
 
@@ -76,7 +76,7 @@ export const paykitRouter = createTRPCRouter({
       return paykit.report({
         amount: input.amount,
         customerId: session.user.id,
-        featureId: input.featureId,
+        featureId: input.featureId as PayKit["featureId"],
       });
     }),
 });

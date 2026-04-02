@@ -8,9 +8,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { paykitClient } from "@/lib/paykit-client";
+import type { PayKit } from "@/server/paykit";
 import { api, type RouterOutputs } from "@/trpc/react";
 
-type SubscribePlanId = Parameters<typeof paykitClient.subscribe>[0]["planId"];
+type SubscribePlanId = PayKit["planId"];
 type CurrentPlan = RouterOutputs["paykit"]["currentPlans"][number];
 
 const planCatalog = [
