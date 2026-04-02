@@ -29,7 +29,7 @@ describe("downgrade-scheduled: ultra → pro", () => {
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b1 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
 
     const b2 = new Date();
     await t.paykit.subscribe({
@@ -37,7 +37,7 @@ describe("downgrade-scheduled: ultra → pro", () => {
       planId: "ultra",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b2 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b2 });
   });
 
   afterAll(async () => {
@@ -54,18 +54,18 @@ describe("downgrade-scheduled: ultra → pro", () => {
         successUrl: "https://example.com/success",
       });
 
-      await waitForWebhook(t.pool, "subscription.updated", { after: beforeDowngrade });
+      await waitForWebhook(t.database, "subscription.updated", { after: beforeDowngrade });
 
       // Ultra is still active but marked as canceled
-      await expectProduct(t.pool, customerId, "ultra", {
+      await expectProduct(t.database, customerId, "ultra", {
         status: "active",
         canceled: true,
       });
 
       // Pro is scheduled for activation at period end
-      await expectProduct(t.pool, customerId, "pro", { status: "scheduled" });
+      await expectProduct(t.database, customerId, "pro", { status: "scheduled" });
     } catch (error) {
-      await dumpStateOnFailure(t.pool, t.dbPath);
+      await dumpStateOnFailure(t.database, t.dbPath);
       throw error;
     }
   });

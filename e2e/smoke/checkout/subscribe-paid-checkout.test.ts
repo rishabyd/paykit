@@ -47,21 +47,21 @@ describe("subscribe-paid-checkout: free → pro via checkout (manual)", () => {
       console.log("\n\n  ▶ Complete checkout at:\n  " + result.paymentUrl + "\n");
 
       // Wait for checkout.completed webhook (manual completion required)
-      await waitForWebhook(t.pool, "checkout.completed", {
+      await waitForWebhook(t.database, "checkout.completed", {
         after: beforeCheckout,
         timeout: 120_000,
       });
 
       // Pro is active
-      await expectProduct(t.pool, customerId, "pro", { status: "active", hasPeriodEnd: true });
+      await expectProduct(t.database, customerId, "pro", { status: "active", hasPeriodEnd: true });
 
       // Free is ended
-      await expectProduct(t.pool, customerId, "free", { status: "ended" });
+      await expectProduct(t.database, customerId, "free", { status: "ended" });
 
       // Subscription exists
-      await expectSubscription(t.pool, customerId, { status: "active" });
+      await expectSubscription(t.database, customerId, { status: "active" });
     } catch (error) {
-      await dumpStateOnFailure(t.pool, t.dbPath);
+      await dumpStateOnFailure(t.database, t.dbPath);
       throw error;
     }
   });

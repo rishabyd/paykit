@@ -29,7 +29,7 @@ describe("upgrade-immediate: pro → ultra", () => {
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: beforeSetup });
+    await waitForWebhook(t.database, "subscription.updated", { after: beforeSetup });
   });
 
   afterAll(async () => {
@@ -46,18 +46,18 @@ describe("upgrade-immediate: pro → ultra", () => {
         successUrl: "https://example.com/success",
       });
 
-      await waitForWebhook(t.pool, "subscription.updated", { after: beforeUpgrade });
+      await waitForWebhook(t.database, "subscription.updated", { after: beforeUpgrade });
 
       // Ultra is active with period dates
-      await expectProduct(t.pool, customerId, "ultra", {
+      await expectProduct(t.database, customerId, "ultra", {
         status: "active",
         hasPeriodEnd: true,
       });
 
       // Pro is ended
-      await expectProduct(t.pool, customerId, "pro", { status: "ended" });
+      await expectProduct(t.database, customerId, "pro", { status: "ended" });
     } catch (error) {
-      await dumpStateOnFailure(t.pool, t.dbPath);
+      await dumpStateOnFailure(t.database, t.dbPath);
       throw error;
     }
   });

@@ -144,6 +144,7 @@ export async function getSubscriptionByProviderSubscriptionId(
         eq(subscription.providerId, input.providerId),
         sql`${subscription.providerData}->>'subscriptionId' = ${input.providerSubscriptionId}`,
       ),
+      orderBy: (s, { desc: d }) => [d(s.createdAt)],
     })) ?? null
   );
 }

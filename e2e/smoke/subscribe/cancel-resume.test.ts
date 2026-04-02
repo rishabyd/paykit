@@ -31,7 +31,7 @@ describe("cancel-resume: pro → free → pro (resume)", () => {
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b1 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
 
     const b2 = new Date();
     await t.paykit.subscribe({
@@ -39,7 +39,7 @@ describe("cancel-resume: pro → free → pro (resume)", () => {
       planId: "free",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b2 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b2 });
   });
 
   afterAll(async () => {
@@ -49,11 +49,11 @@ describe("cancel-resume: pro → free → pro (resume)", () => {
   it("re-subscribing to the current plan cancels the scheduled downgrade", async () => {
     try {
       // Verify precondition: Pro is canceling, Free is scheduled
-      await expectProduct(t.pool, customerId, "pro", {
+      await expectProduct(t.database, customerId, "pro", {
         status: "active",
         canceled: true,
       });
-      await expectProduct(t.pool, customerId, "free", { status: "scheduled" });
+      await expectProduct(t.database, customerId, "free", { status: "scheduled" });
 
       // Action: resume Pro
       const beforeResume = new Date();
@@ -64,21 +64,21 @@ describe("cancel-resume: pro → free → pro (resume)", () => {
       });
 
       // Wait for resume webhook
-      await waitForWebhook(t.pool, "subscription.updated", { after: beforeResume });
+      await waitForWebhook(t.database, "subscription.updated", { after: beforeResume });
 
       // Pro is active and no longer canceled
-      await expectProduct(t.pool, customerId, "pro", {
+      await expectProduct(t.database, customerId, "pro", {
         status: "active",
         canceled: false,
       });
 
       // Scheduled Free is deleted
-      await expectProductNotPresent(t.pool, customerId, "free");
+      await expectProductNotPresent(t.database, customerId, "free");
 
       // Subscription no longer set to cancel
-      await expectSubscription(t.pool, customerId, { cancelAtPeriodEnd: false });
+      await expectSubscription(t.database, customerId, { cancelAtPeriodEnd: false });
     } catch (error) {
-      await dumpStateOnFailure(t.pool, t.dbPath);
+      await dumpStateOnFailure(t.database, t.dbPath);
       throw error;
     }
   });

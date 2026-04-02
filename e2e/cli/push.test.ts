@@ -1,4 +1,4 @@
-import pg from "pg";
+import { asc, desc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { getPayKitConfig } from "../../packages/paykit/src/cli/utils/get-config";
@@ -7,6 +7,7 @@ import {
   getPendingMigrationCount,
   migrateDatabase,
 } from "../../packages/paykit/src/database/index";
+import { product } from "../../packages/paykit/src/database/schema";
 import {
   dryRunSyncProducts,
   syncProducts,
@@ -59,31 +60,36 @@ describe("paykitjs push", () => {
       expect(synced.length).toBe(2);
 
       // Verify plans exist in the database
-      const pool = new pg.Pool({ connectionString: fixture.dbUrl });
-      const dbResult = await pool.query(
-        `SELECT id, name, "group", is_default FROM paykit_product ORDER BY id`,
-      );
-      expect(dbResult.rows).toEqual([
+      const dbRows = await ctx.database
+        .select({
+          id: product.id,
+          name: product.name,
+          group: product.group,
+          is_default: product.isDefault,
+        })
+        .from(product)
+        .orderBy(asc(product.id));
+      expect(dbRows).toEqual([
         { id: "free", name: "Free", group: "base", is_default: true },
         { id: "pro", name: "Pro", group: "base", is_default: false },
       ]);
 
-      // Verify paid plan (pro) was synced to Stripe — free plans have no price
-      // and are not synced to the provider
-      const providerProducts = await pool.query(
-        `SELECT pp.provider_product_id, p.id as plan_id FROM paykit_provider_product pp
-         JOIN paykit_product p ON p.internal_id = pp.product_internal_id
-         ORDER BY p.id`,
-      );
-      expect(providerProducts.rows.length).toBe(1);
-      expect((providerProducts.rows[0] as { plan_id: string }).plan_id).toBe("pro");
+      // Verify paid plan (pro) was synced to Stripe via provider JSONB
+      const providerRows = await ctx.database
+        .select({ id: product.id, provider: product.provider })
+        .from(product)
+        .where(eq(product.id, "pro"))
+        .orderBy(desc(product.version))
+        .limit(1);
+      const proProduct = providerRows[0] as
+        | { id: string; provider: Record<string, { productId: string }> }
+        | undefined;
+      expect(proProduct).toBeTruthy();
+      const stripeInfo = proProduct!.provider.stripe;
+      expect(stripeInfo).toBeTruthy();
 
-      const stripeProduct = await fixture.stripeClient.products.retrieve(
-        (providerProducts.rows[0] as { provider_product_id: string }).provider_product_id,
-      );
+      const stripeProduct = await fixture.stripeClient.products.retrieve(stripeInfo.productId);
       expect(stripeProduct.active).toBe(true);
-
-      await pool.end();
     } finally {
       await config.options.database.end();
     }

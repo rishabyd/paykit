@@ -12,6 +12,7 @@
     "@paykitjs/stripe": "workspace:*",
     "@types/pg": "^8.18.0",
     "dotenv": "^17.3.1",
+    "drizzle-orm": "^0.45.1",
     "paykitjs": "workspace:*",
     "pg": "^8.20.0",
     "stripe": "^19.1.0",

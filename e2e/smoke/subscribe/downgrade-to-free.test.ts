@@ -30,7 +30,7 @@ describe("downgrade-to-free: pro → free", () => {
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b1 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
   });
 
   afterAll(async () => {
@@ -47,21 +47,21 @@ describe("downgrade-to-free: pro → free", () => {
         successUrl: "https://example.com/success",
       });
 
-      await waitForWebhook(t.pool, "subscription.updated", { after: beforeDowngrade });
+      await waitForWebhook(t.database, "subscription.updated", { after: beforeDowngrade });
 
       // Pro is still active but canceled
-      await expectProduct(t.pool, customerId, "pro", {
+      await expectProduct(t.database, customerId, "pro", {
         status: "active",
         canceled: true,
       });
 
       // Free is scheduled
-      await expectProduct(t.pool, customerId, "free", { status: "scheduled" });
+      await expectProduct(t.database, customerId, "free", { status: "scheduled" });
 
       // Subscription is set to cancel at period end
-      await expectSubscription(t.pool, customerId, { cancelAtPeriodEnd: true });
+      await expectSubscription(t.database, customerId, { cancelAtPeriodEnd: true });
     } catch (error) {
-      await dumpStateOnFailure(t.pool, t.dbPath);
+      await dumpStateOnFailure(t.database, t.dbPath);
       throw error;
     }
   });

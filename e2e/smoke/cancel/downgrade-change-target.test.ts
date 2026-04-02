@@ -30,7 +30,7 @@ describe("downgrade-change-target: ultra → pro (scheduled) → free (change ta
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b1 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
 
     const b2 = new Date();
     await t.paykit.subscribe({
@@ -38,7 +38,7 @@ describe("downgrade-change-target: ultra → pro (scheduled) → free (change ta
       planId: "ultra",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b2 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b2 });
 
     // Schedule downgrade to Pro
     const b3 = new Date();
@@ -47,7 +47,7 @@ describe("downgrade-change-target: ultra → pro (scheduled) → free (change ta
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b3 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b3 });
   });
 
   afterAll(async () => {
@@ -57,8 +57,8 @@ describe("downgrade-change-target: ultra → pro (scheduled) → free (change ta
   it("changing the scheduled downgrade target replaces the old scheduled product", async () => {
     try {
       // Verify precondition: Ultra canceling, Pro scheduled
-      await expectProduct(t.pool, customerId, "ultra", { status: "active", canceled: true });
-      await expectProduct(t.pool, customerId, "pro", { status: "scheduled" });
+      await expectProduct(t.database, customerId, "ultra", { status: "active", canceled: true });
+      await expectProduct(t.database, customerId, "pro", { status: "scheduled" });
 
       // Action: change downgrade target to Free instead
       const beforeChange = new Date();
@@ -67,16 +67,16 @@ describe("downgrade-change-target: ultra → pro (scheduled) → free (change ta
         planId: "free",
         successUrl: "https://example.com/success",
       });
-      await waitForWebhook(t.pool, "subscription.updated", { after: beforeChange });
+      await waitForWebhook(t.database, "subscription.updated", { after: beforeChange });
 
       // Ultra still canceling
-      await expectProduct(t.pool, customerId, "ultra", { status: "active", canceled: true });
+      await expectProduct(t.database, customerId, "ultra", { status: "active", canceled: true });
 
       // Pro scheduled is gone, Free is now scheduled
-      await expectProductNotPresent(t.pool, customerId, "pro");
-      await expectProduct(t.pool, customerId, "free", { status: "scheduled" });
+      await expectProductNotPresent(t.database, customerId, "pro");
+      await expectProduct(t.database, customerId, "free", { status: "scheduled" });
     } catch (error) {
-      await dumpStateOnFailure(t.pool, t.dbPath);
+      await dumpStateOnFailure(t.database, t.dbPath);
       throw error;
     }
   });

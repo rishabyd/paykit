@@ -28,7 +28,7 @@ describe("check-metered: metered feature balance and usage reporting", () => {
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b1 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
   });
 
   afterAll(async () => {
@@ -67,7 +67,7 @@ describe("check-metered: metered feature balance and usage reporting", () => {
       const afterFailed = await t.paykit.check({ customerId, featureId: "messages" });
       expect(afterFailed.balance!.remaining).toBe(440);
     } catch (error) {
-      await dumpStateOnFailure(t.pool, t.dbPath);
+      await dumpStateOnFailure(t.database, t.dbPath);
       throw error;
     }
   });

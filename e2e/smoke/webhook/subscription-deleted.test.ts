@@ -1,5 +1,7 @@
+import { desc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
+import { subscription } from "../../../packages/paykit/src/database/schema";
 import {
   createTestCustomerWithPM,
   createTestPayKit,
@@ -30,17 +32,17 @@ describe("subscription-deleted: Stripe cancels subscription directly", () => {
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b1 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
 
-    // Get provider subscription ID
-    const subResult = await t.pool.query(
-      `SELECT s.provider_subscription_id FROM paykit_subscription s
-       JOIN paykit_customer_product cp ON cp.subscription_id = s.id
-       WHERE cp.customer_id = $1 ORDER BY s.updated_at DESC LIMIT 1`,
-      [customerId],
-    );
-    providerSubscriptionId = (subResult.rows[0] as { provider_subscription_id: string })
-      .provider_subscription_id;
+    // Get provider subscription ID from provider_data JSONB
+    const subRows = await t.database
+      .select({ providerData: subscription.providerData })
+      .from(subscription)
+      .where(eq(subscription.customerId, customerId))
+      .orderBy(desc(subscription.updatedAt))
+      .limit(1);
+    const providerData = subRows[0]?.providerData as { subscriptionId: string } | null;
+    providerSubscriptionId = providerData!.subscriptionId;
   });
 
   afterAll(async () => {
@@ -55,18 +57,21 @@ describe("subscription-deleted: Stripe cancels subscription directly", () => {
       await t.stripeClient.subscriptions.cancel(providerSubscriptionId);
 
       // Wait for the real subscription.deleted webhook
-      await waitForWebhook(t.pool, "subscription.deleted", {
+      await waitForWebhook(t.database, "subscription.deleted", {
         after: beforeCancel,
         timeout: 30_000,
       });
 
       // Pro should be canceled/ended
-      await expectProduct(t.pool, customerId, "pro", { status: "canceled" });
+      await expectProduct(t.database, customerId, "pro", { status: "canceled" });
 
       // Free should be active (default plan activated)
-      await expectProduct(t.pool, customerId, "free", { status: "active", hasPeriodEnd: false });
+      await expectProduct(t.database, customerId, "free", {
+        status: "active",
+        hasPeriodEnd: false,
+      });
     } catch (error) {
-      await dumpStateOnFailure(t.pool, t.dbPath);
+      await dumpStateOnFailure(t.database, t.dbPath);
       throw error;
     }
   });

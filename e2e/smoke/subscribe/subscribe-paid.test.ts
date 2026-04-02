@@ -45,24 +45,24 @@ describe("subscribe-paid: free → pro", () => {
       }
 
       // Wait for Stripe webhook
-      await waitForWebhook(t.pool, "subscription.updated", { after: beforeSubscribe });
+      await waitForWebhook(t.database, "subscription.updated", { after: beforeSubscribe });
 
       // Pro is active with period dates
-      await expectProduct(t.pool, customerId, "pro", {
+      await expectProduct(t.database, customerId, "pro", {
         status: "active",
         hasPeriodEnd: true,
       });
 
       // Free is ended
-      await expectProduct(t.pool, customerId, "free", { status: "ended" });
+      await expectProduct(t.database, customerId, "free", { status: "ended" });
 
       // Subscription exists and is active
-      await expectSubscription(t.pool, customerId, { status: "active" });
+      await expectSubscription(t.database, customerId, { status: "active" });
 
       // At least 1 invoice
-      await expectInvoiceCount(t.pool, customerId, 1);
+      await expectInvoiceCount(t.database, customerId, 1);
     } catch (error) {
-      await dumpStateOnFailure(t.pool, t.dbPath);
+      await dumpStateOnFailure(t.database, t.dbPath);
       throw error;
     }
   });

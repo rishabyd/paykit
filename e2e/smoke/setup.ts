@@ -3,12 +3,21 @@ import path from "node:path";
 
 import { stripe } from "@paykitjs/stripe";
 import { config } from "dotenv";
+import { and, count, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { createPayKit, feature, plan } from "paykitjs";
 import pg from "pg";
 import Stripe from "stripe";
 
 import type { PayKitContext } from "../../packages/paykit/src/core/context";
+import type { PayKitDatabase } from "../../packages/paykit/src/database/index";
 import { migrateDatabase } from "../../packages/paykit/src/database/index";
+import {
+  customer,
+  invoice,
+  product,
+  subscription,
+  webhookEvent,
+} from "../../packages/paykit/src/database/schema";
 import { syncPaymentMethodByProviderCustomer } from "../../packages/paykit/src/services/payment-method-service";
 import { syncProducts } from "../../packages/paykit/src/services/product-sync-service";
 
@@ -66,11 +75,9 @@ export const ultraPlan = plan({
 // Types
 // ---------------------------------------------------------------------------
 
-type PoolLike = pg.Pool;
-
 export interface TestPayKit {
   paykit: ReturnType<typeof createPayKit>;
-  pool: PoolLike;
+  database: PayKitDatabase;
   ctx: PayKitContext;
   stripeClient: Stripe;
   testClockId: string;
@@ -196,7 +203,7 @@ export async function createTestPayKit(): Promise<TestPayKit> {
 
   return {
     paykit,
-    pool,
+    database: ctx.database,
     ctx,
     stripeClient,
     testClockId: clock.id,
@@ -243,13 +250,16 @@ export async function createTestCustomer(
     successUrl: "https://example.com/success",
   });
 
-  // Now the provider_customer mapping exists
-  const result = await t.pool.query(
-    "SELECT provider_customer_id FROM paykit_provider_customer WHERE customer_id = $1 LIMIT 1",
-    [input.id],
-  );
-  const providerCustomerId = (result.rows[0] as { provider_customer_id: string })
-    .provider_customer_id;
+  // Now the provider customer ID is stored in the customer's provider JSONB column
+  const row = await t.database.query.customer.findFirst({
+    where: eq(customer.id, input.id),
+  });
+  const providerMap = (row?.provider ?? {}) as Record<string, { id: string }>;
+  const providerCustomerId = providerMap.stripe?.id;
+
+  if (!providerCustomerId) {
+    throw new Error(`No Stripe provider customer ID found for customer "${input.id}"`);
+  }
 
   return { customerId: input.id, providerCustomerId };
 }
@@ -294,7 +304,7 @@ export async function createTestCustomerWithPM(
 // ---------------------------------------------------------------------------
 
 export async function expectProduct(
-  pool: PoolLike,
+  database: PayKitDatabase,
   customerId: string,
   planId: string,
   expected: {
@@ -303,17 +313,24 @@ export async function expectProduct(
     hasPeriodEnd?: boolean;
   },
 ): Promise<void> {
-  const result = await pool.query(
-    `SELECT cp.status, cp.canceled, cp.current_period_end_at
-     FROM paykit_customer_product cp
-     JOIN paykit_product p ON p.internal_id = cp.product_internal_id
-     WHERE cp.customer_id = $1 AND p.id = $2 AND cp.status = $3
-     ORDER BY cp.created_at DESC LIMIT 1`,
-    [customerId, planId, expected.status],
-  );
-  const row = result.rows[0] as
-    | { status: string; canceled: boolean; current_period_end_at: string | null }
-    | undefined;
+  const rows = await database
+    .select({
+      status: subscription.status,
+      canceled: subscription.canceled,
+      currentPeriodEndAt: subscription.currentPeriodEndAt,
+    })
+    .from(subscription)
+    .innerJoin(product, eq(product.internalId, subscription.productInternalId))
+    .where(
+      and(
+        eq(subscription.customerId, customerId),
+        eq(product.id, planId),
+        eq(subscription.status, expected.status),
+      ),
+    )
+    .orderBy(desc(subscription.createdAt))
+    .limit(1);
+  const row = rows[0];
 
   if (!row) {
     throw new Error(
@@ -327,31 +344,37 @@ export async function expectProduct(
     );
   }
 
-  if (expected.hasPeriodEnd === true && row.current_period_end_at == null) {
+  if (expected.hasPeriodEnd === true && row.currentPeriodEndAt == null) {
     throw new Error(`Expected product "${planId}" to have period end, but it's null`);
   }
 
-  if (expected.hasPeriodEnd === false && row.current_period_end_at != null) {
+  if (expected.hasPeriodEnd === false && row.currentPeriodEndAt != null) {
     throw new Error(
-      `Expected product "${planId}" to have no period end, but got ${row.current_period_end_at}`,
+      `Expected product "${planId}" to have no period end, but got ${String(row.currentPeriodEndAt)}`,
     );
   }
 }
 
 export async function expectProductNotPresent(
-  pool: PoolLike,
+  database: PayKitDatabase,
   customerId: string,
   planId: string,
 ): Promise<void> {
-  const result = await pool.query(
-    `SELECT cp.status FROM paykit_customer_product cp
-     JOIN paykit_product p ON p.internal_id = cp.product_internal_id
-     WHERE cp.customer_id = $1 AND p.id = $2 AND cp.status NOT IN ('ended', 'canceled')
-     ORDER BY cp.created_at DESC LIMIT 1`,
-    [customerId, planId],
-  );
-  if (result.rows.length > 0) {
-    const row = result.rows[0] as { status: string };
+  const rows = await database
+    .select({ status: subscription.status })
+    .from(subscription)
+    .innerJoin(product, eq(product.internalId, subscription.productInternalId))
+    .where(
+      and(
+        eq(subscription.customerId, customerId),
+        eq(product.id, planId),
+        sql`${subscription.status} NOT IN ('ended', 'canceled')`,
+      ),
+    )
+    .orderBy(desc(subscription.createdAt))
+    .limit(1);
+  if (rows.length > 0) {
+    const row = rows[0]!;
     throw new Error(
       `Expected product "${planId}" not present, but found with status "${row.status}"`,
     );
@@ -359,33 +382,35 @@ export async function expectProductNotPresent(
 }
 
 export async function expectInvoiceCount(
-  pool: PoolLike,
+  database: PayKitDatabase,
   customerId: string,
   expected: number,
 ): Promise<void> {
-  const result = await pool.query(
-    "SELECT count(*)::int as count FROM paykit_invoice WHERE customer_id = $1",
-    [customerId],
-  );
-  const count = (result.rows[0] as { count: number }).count;
-  if (count < expected) {
-    throw new Error(`Expected at least ${String(expected)} invoices, got ${String(count)}`);
+  const result = await database
+    .select({ count: count() })
+    .from(invoice)
+    .where(eq(invoice.customerId, customerId));
+  const actual = result[0]?.count ?? 0;
+  if (actual < expected) {
+    throw new Error(`Expected at least ${String(expected)} invoices, got ${String(actual)}`);
   }
 }
 
 export async function expectSubscription(
-  pool: PoolLike,
+  database: PayKitDatabase,
   customerId: string,
   expected: { status?: string; cancelAtPeriodEnd?: boolean },
 ): Promise<void> {
-  const result = await pool.query(
-    `SELECT s.status, s.cancel_at_period_end FROM paykit_subscription s
-     JOIN paykit_customer_product cp ON cp.subscription_id = s.id
-     WHERE cp.customer_id = $1
-     ORDER BY s.updated_at DESC LIMIT 1`,
-    [customerId],
-  );
-  const row = result.rows[0] as { status: string; cancel_at_period_end: boolean } | undefined;
+  const rows = await database
+    .select({
+      status: subscription.status,
+      cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+    })
+    .from(subscription)
+    .where(eq(subscription.customerId, customerId))
+    .orderBy(desc(subscription.updatedAt))
+    .limit(1);
+  const row = rows[0];
 
   if (!row) {
     throw new Error(`No subscription found for customer "${customerId}"`);
@@ -397,10 +422,10 @@ export async function expectSubscription(
 
   if (
     expected.cancelAtPeriodEnd !== undefined &&
-    row.cancel_at_period_end !== expected.cancelAtPeriodEnd
+    row.cancelAtPeriodEnd !== expected.cancelAtPeriodEnd
   ) {
     throw new Error(
-      `Expected cancel_at_period_end=${String(expected.cancelAtPeriodEnd)}, got ${String(row.cancel_at_period_end)}`,
+      `Expected cancel_at_period_end=${String(expected.cancelAtPeriodEnd)}, got ${String(row.cancelAtPeriodEnd)}`,
     );
   }
 }
@@ -608,7 +633,7 @@ export async function advanceTestClock(
 }
 
 export async function waitForWebhook(
-  pool: PoolLike,
+  database: PayKitDatabase,
   eventType: string,
   options?: { timeout?: number; after?: Date },
 ): Promise<Record<string, unknown>> {
@@ -617,20 +642,20 @@ export async function waitForWebhook(
   const start = Date.now();
 
   while (Date.now() - start < timeout) {
-    const result = await pool.query(
-      `SELECT * FROM paykit_webhook_event
-       WHERE type = $1 AND status IN ('processed', 'failed')
-         AND received_at > $2
-       ORDER BY received_at DESC LIMIT 1`,
-      [eventType, after.toISOString()],
-    );
+    const row = await database.query.webhookEvent.findFirst({
+      where: and(
+        eq(webhookEvent.type, eventType),
+        inArray(webhookEvent.status, ["processed", "failed"]),
+        gt(webhookEvent.receivedAt, after),
+      ),
+      orderBy: (we, { desc: d }) => [d(we.receivedAt)],
+    });
 
-    const row = result.rows[0];
     if (row) {
       if (row.status === "failed") {
         throw new Error(`Webhook ${eventType} failed: ${String(row.error)}`);
       }
-      return row;
+      return row as unknown as Record<string, unknown>;
     }
 
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -764,45 +789,78 @@ export async function fakeSubscriptionDeletedEvent(
 // Failure dump
 // ---------------------------------------------------------------------------
 
-export async function dumpStateOnFailure(pool: PoolLike, dbPath: string): Promise<void> {
+export async function dumpStateOnFailure(database: PayKitDatabase, dbPath: string): Promise<void> {
   console.error("\n=== SMOKE TEST FAILURE — DB STATE DUMP ===");
   console.error(`Database path: ${dbPath}\n`);
 
-  const tables = [
-    { name: "paykit_customer", query: "SELECT id, email, name FROM paykit_customer" },
-    {
-      name: "paykit_customer_product",
-      query: `SELECT id, customer_id, status, canceled, started_at, ended_at,
-              current_period_start_at, current_period_end_at, scheduled_product_id
-              FROM paykit_customer_product ORDER BY created_at DESC`,
-    },
-    {
-      name: "paykit_subscription",
-      query: `SELECT id, status, cancel_at_period_end, current_period_start_at,
-              current_period_end_at, canceled_at, ended_at
-              FROM paykit_subscription ORDER BY updated_at DESC`,
-    },
-    {
-      name: "paykit_webhook_event",
-      query: `SELECT type, status, error, trace_id, received_at
-              FROM paykit_webhook_event ORDER BY received_at DESC LIMIT 10`,
-    },
-  ];
-
-  for (const table of tables) {
-    try {
-      const result = await pool.query(table.query);
-      console.error(`\n--- ${table.name} ---`);
-      if (result.rows.length === 0) {
-        console.error("  (empty)");
-      } else {
-        for (const row of result.rows) {
-          console.error(JSON.stringify(row, null, 2));
-        }
+  try {
+    const customers = await database
+      .select({ id: customer.id, email: customer.email, name: customer.name })
+      .from(customer);
+    console.error("\n--- paykit_customer ---");
+    if (customers.length === 0) {
+      console.error("  (empty)");
+    } else {
+      for (const row of customers) {
+        console.error(JSON.stringify(row, null, 2));
       }
-    } catch {
-      console.error(`\n--- ${table.name} --- (query failed)`);
     }
+  } catch {
+    console.error("\n--- paykit_customer --- (query failed)");
+  }
+
+  try {
+    const subscriptions = await database
+      .select({
+        id: subscription.id,
+        customerId: subscription.customerId,
+        status: subscription.status,
+        canceled: subscription.canceled,
+        startedAt: subscription.startedAt,
+        endedAt: subscription.endedAt,
+        currentPeriodStartAt: subscription.currentPeriodStartAt,
+        currentPeriodEndAt: subscription.currentPeriodEndAt,
+        scheduledProductId: subscription.scheduledProductId,
+        cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+        canceledAt: subscription.canceledAt,
+        providerData: subscription.providerData,
+      })
+      .from(subscription)
+      .orderBy(desc(subscription.updatedAt));
+    console.error("\n--- paykit_subscription ---");
+    if (subscriptions.length === 0) {
+      console.error("  (empty)");
+    } else {
+      for (const row of subscriptions) {
+        console.error(JSON.stringify(row, null, 2));
+      }
+    }
+  } catch {
+    console.error("\n--- paykit_subscription --- (query failed)");
+  }
+
+  try {
+    const events = await database
+      .select({
+        type: webhookEvent.type,
+        status: webhookEvent.status,
+        error: webhookEvent.error,
+        traceId: webhookEvent.traceId,
+        receivedAt: webhookEvent.receivedAt,
+      })
+      .from(webhookEvent)
+      .orderBy(desc(webhookEvent.receivedAt))
+      .limit(10);
+    console.error("\n--- paykit_webhook_event ---");
+    if (events.length === 0) {
+      console.error("  (empty)");
+    } else {
+      for (const row of events) {
+        console.error(JSON.stringify(row, null, 2));
+      }
+    }
+  } catch {
+    console.error("\n--- paykit_webhook_event --- (query failed)");
   }
 
   console.error("\n=== END DUMP ===\n");

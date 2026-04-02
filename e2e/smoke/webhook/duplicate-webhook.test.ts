@@ -1,5 +1,7 @@
+import { and, count, desc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { subscription, webhookEvent } from "../../../packages/paykit/src/database/schema";
 import {
   createTestCustomerWithPM,
   createTestPayKit,
@@ -29,7 +31,7 @@ describe("duplicate-webhook: same event delivered twice", () => {
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b1 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
   });
 
   afterAll(async () => {
@@ -39,26 +41,30 @@ describe("duplicate-webhook: same event delivered twice", () => {
   it("processing the same webhook event twice is idempotent", async () => {
     try {
       // Get the last processed webhook event
-      const eventResult = await t.pool.query(
-        `SELECT provider_event_id, type FROM paykit_webhook_event
-         WHERE type = 'subscription.updated' AND status = 'processed'
-         ORDER BY received_at DESC LIMIT 1`,
-      );
-      const lastEvent = eventResult.rows[0] as { provider_event_id: string; type: string };
+      const eventRows = await t.database
+        .select({
+          providerEventId: webhookEvent.providerEventId,
+          type: webhookEvent.type,
+        })
+        .from(webhookEvent)
+        .where(
+          and(eq(webhookEvent.type, "subscription.updated"), eq(webhookEvent.status, "processed")),
+        )
+        .orderBy(desc(webhookEvent.receivedAt))
+        .limit(1);
+      const lastEvent = eventRows[0];
       expect(lastEvent).toBeDefined();
 
       // Count current webhook events
-      const countBefore = await t.pool.query(
-        "SELECT count(*)::int as count FROM paykit_webhook_event",
-      );
-      const webhookCountBefore = (countBefore.rows[0] as { count: number }).count;
+      const countBeforeRows = await t.database.select({ count: count() }).from(webhookEvent);
+      const webhookCountBefore = countBeforeRows[0]?.count ?? 0;
 
       // Count customer products
-      const productsBefore = await t.pool.query(
-        "SELECT count(*)::int as count FROM paykit_customer_product WHERE customer_id = $1",
-        [customerId],
-      );
-      const productCountBefore = (productsBefore.rows[0] as { count: number }).count;
+      const productCountBeforeRows = await t.database
+        .select({ count: count() })
+        .from(subscription)
+        .where(eq(subscription.customerId, customerId));
+      const productCountBefore = productCountBeforeRows[0]?.count ?? 0;
 
       // Replay the same webhook by calling handleWebhook with the same event ID
       // The idempotency check in beginWebhookEvent should skip it
@@ -66,25 +72,23 @@ describe("duplicate-webhook: same event delivered twice", () => {
       // after the duplicate would have been processed
 
       // Pro should still be active (no side effects from duplicate)
-      await expectProduct(t.pool, customerId, "pro", { status: "active" });
+      await expectProduct(t.database, customerId, "pro", { status: "active" });
 
       // No new webhook events created (duplicate was skipped)
-      const countAfter = await t.pool.query(
-        "SELECT count(*)::int as count FROM paykit_webhook_event",
-      );
-      const webhookCountAfter = (countAfter.rows[0] as { count: number }).count;
+      const countAfterRows = await t.database.select({ count: count() }).from(webhookEvent);
+      const webhookCountAfter = countAfterRows[0]?.count ?? 0;
 
       // No new products created
-      const productsAfter = await t.pool.query(
-        "SELECT count(*)::int as count FROM paykit_customer_product WHERE customer_id = $1",
-        [customerId],
-      );
-      const productCountAfter = (productsAfter.rows[0] as { count: number }).count;
+      const productCountAfterRows = await t.database
+        .select({ count: count() })
+        .from(subscription)
+        .where(eq(subscription.customerId, customerId));
+      const productCountAfter = productCountAfterRows[0]?.count ?? 0;
 
       expect(webhookCountAfter).toBe(webhookCountBefore);
       expect(productCountAfter).toBe(productCountBefore);
     } catch (error) {
-      await dumpStateOnFailure(t.pool, t.dbPath);
+      await dumpStateOnFailure(t.database, t.dbPath);
       throw error;
     }
   });

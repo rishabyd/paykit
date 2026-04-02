@@ -1,5 +1,7 @@
+import { and, desc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
+import { paymentMethod, product, subscription } from "../../../packages/paykit/src/database/schema";
 import {
   advanceTestClock,
   createTestCustomerWithPM,
@@ -30,7 +32,7 @@ describe("resubscribe-after-cancel: checkout after full cancellation", () => {
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b1 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
 
     const b2 = new Date();
     await t.paykit.subscribe({
@@ -38,36 +40,39 @@ describe("resubscribe-after-cancel: checkout after full cancellation", () => {
       planId: "free",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b2 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b2 });
 
     // Advance past period end so subscription fully cancels
-    const subResult = await t.pool.query(
-      `SELECT s.current_period_end_at FROM paykit_subscription s
-       JOIN paykit_customer_product cp ON cp.subscription_id = s.id
-       WHERE cp.customer_id = $1 ORDER BY s.updated_at DESC LIMIT 1`,
-      [customerId],
-    );
-    const periodEnd = new Date(
-      (subResult.rows[0] as { current_period_end_at: string }).current_period_end_at,
-    );
+    const subRows = await t.database
+      .select({ currentPeriodEndAt: subscription.currentPeriodEndAt })
+      .from(subscription)
+      .where(eq(subscription.customerId, customerId))
+      .orderBy(desc(subscription.updatedAt))
+      .limit(1);
+    const periodEnd = new Date(subRows[0]!.currentPeriodEndAt as unknown as string);
     const advanceTo = new Date(periodEnd.getTime() + 86_400_000);
     await advanceTestClock(t.stripeClient, t.testClockId, advanceTo.toISOString().split("T")[0]!);
 
     // Wait for Free to activate
     for (let i = 0; i < 60; i++) {
-      const result = await t.pool.query(
-        `SELECT cp.status FROM paykit_customer_product cp
-         JOIN paykit_product p ON p.internal_id = cp.product_internal_id
-         WHERE cp.customer_id = $1 AND p.id = 'free' AND cp.status = 'active'`,
-        [customerId],
-      );
-      if (result.rows.length > 0) break;
+      const rows = await t.database
+        .select({ status: subscription.status })
+        .from(subscription)
+        .innerJoin(product, eq(product.internalId, subscription.productInternalId))
+        .where(
+          and(
+            eq(subscription.customerId, customerId),
+            eq(product.id, "free"),
+            eq(subscription.status, "active"),
+          ),
+        );
+      if (rows.length > 0) break;
       if (i === 59) throw new Error("Free never activated in setup");
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
     // Clear stale payment method (Stripe removes it on full cancellation)
-    await t.pool.query("DELETE FROM paykit_payment_method WHERE customer_id = $1", [customerId]);
+    await t.database.delete(paymentMethod).where(eq(paymentMethod.customerId, customerId));
   });
 
   afterAll(async () => {
@@ -92,15 +97,15 @@ describe("resubscribe-after-cancel: checkout after full cancellation", () => {
       console.log("\n\n  ▶ Complete checkout at:\n  " + result.paymentUrl + "\n");
 
       // Wait for manual checkout completion
-      await waitForWebhook(t.pool, "checkout.completed", {
+      await waitForWebhook(t.database, "checkout.completed", {
         after: beforeCheckout,
         timeout: 120_000,
       });
 
       // Pro is active again
-      await expectProduct(t.pool, customerId, "pro", { status: "active", hasPeriodEnd: true });
+      await expectProduct(t.database, customerId, "pro", { status: "active", hasPeriodEnd: true });
     } catch (error) {
-      await dumpStateOnFailure(t.pool, t.dbPath);
+      await dumpStateOnFailure(t.database, t.dbPath);
       throw error;
     }
   });

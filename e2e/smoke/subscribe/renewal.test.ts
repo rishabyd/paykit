@@ -1,5 +1,7 @@
+import { and, desc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { subscription } from "../../../packages/paykit/src/database/schema";
 import {
   advanceTestClock,
   createTestCustomerWithPM,
@@ -30,7 +32,7 @@ describe("renewal: pro subscription renews after 1 month", () => {
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b1 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
   });
 
   afterAll(async () => {
@@ -40,16 +42,13 @@ describe("renewal: pro subscription renews after 1 month", () => {
   it("advancing clock 1 month rolls period dates forward", async () => {
     try {
       // Record current period end
-      const subResult = await t.pool.query(
-        `SELECT s.current_period_end_at FROM paykit_subscription s
-         JOIN paykit_customer_product cp ON cp.subscription_id = s.id
-         WHERE cp.customer_id = $1
-         ORDER BY s.updated_at DESC LIMIT 1`,
-        [customerId],
-      );
-      const periodEnd = new Date(
-        (subResult.rows[0] as { current_period_end_at: string }).current_period_end_at,
-      );
+      const subRows = await t.database
+        .select({ currentPeriodEndAt: subscription.currentPeriodEndAt })
+        .from(subscription)
+        .where(eq(subscription.customerId, customerId))
+        .orderBy(desc(subscription.updatedAt))
+        .limit(1);
+      const periodEnd = new Date(subRows[0]!.currentPeriodEndAt as unknown as string);
 
       // Advance clock 1 day past period end
       const advanceTo = new Date(periodEnd.getTime() + 86_400_000);
@@ -58,16 +57,15 @@ describe("renewal: pro subscription renews after 1 month", () => {
       // Poll until period dates change (real subscription.updated webhook)
       let newPeriodEnd = periodEnd;
       for (let i = 0; i < 60; i++) {
-        const result = await t.pool.query(
-          `SELECT s.current_period_end_at FROM paykit_subscription s
-           JOIN paykit_customer_product cp ON cp.subscription_id = s.id
-           WHERE cp.customer_id = $1 AND s.status = 'active'
-           ORDER BY s.updated_at DESC LIMIT 1`,
-          [customerId],
-        );
-        const row = result.rows[0] as { current_period_end_at: string } | undefined;
-        if (row) {
-          const end = new Date(row.current_period_end_at);
+        const rows = await t.database
+          .select({ currentPeriodEndAt: subscription.currentPeriodEndAt })
+          .from(subscription)
+          .where(and(eq(subscription.customerId, customerId), eq(subscription.status, "active")))
+          .orderBy(desc(subscription.updatedAt))
+          .limit(1);
+        const row = rows[0];
+        if (row?.currentPeriodEndAt) {
+          const end = new Date(row.currentPeriodEndAt as unknown as string);
           if (end.getTime() > periodEnd.getTime()) {
             newPeriodEnd = end;
             break;
@@ -81,9 +79,9 @@ describe("renewal: pro subscription renews after 1 month", () => {
       expect(newPeriodEnd.getTime()).toBeGreaterThan(periodEnd.getTime());
 
       // Pro is still active
-      await expectProduct(t.pool, customerId, "pro", { status: "active" });
+      await expectProduct(t.database, customerId, "pro", { status: "active" });
     } catch (error) {
-      await dumpStateOnFailure(t.pool, t.dbPath);
+      await dumpStateOnFailure(t.database, t.dbPath);
       throw error;
     }
   });

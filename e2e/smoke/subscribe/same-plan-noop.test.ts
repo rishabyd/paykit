@@ -1,5 +1,7 @@
+import { and, count, desc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { invoice, product, subscription } from "../../../packages/paykit/src/database/schema";
 import {
   createTestCustomerWithPM,
   createTestPayKit,
@@ -28,7 +30,7 @@ describe("same-plan-noop: pro → pro", () => {
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b1 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
   });
 
   afterAll(async () => {
@@ -38,20 +40,25 @@ describe("same-plan-noop: pro → pro", () => {
   it("subscribing to the current plan with no pending changes is a noop", async () => {
     try {
       // Snapshot current state
-      const before = await t.pool.query(
-        `SELECT cp.id, cp.updated_at FROM paykit_customer_product cp
-         JOIN paykit_product p ON p.internal_id = cp.product_internal_id
-         WHERE cp.customer_id = $1 AND p.id = 'pro' AND cp.status = 'active'`,
-        [customerId],
-      );
-      const beforeRow = before.rows[0] as { id: string; updated_at: string };
+      const beforeRows = await t.database
+        .select({ id: subscription.id, updatedAt: subscription.updatedAt })
+        .from(subscription)
+        .innerJoin(product, eq(product.internalId, subscription.productInternalId))
+        .where(
+          and(
+            eq(subscription.customerId, customerId),
+            eq(product.id, "pro"),
+            eq(subscription.status, "active"),
+          ),
+        );
+      const beforeRow = beforeRows[0];
       expect(beforeRow).toBeDefined();
 
-      const invoicesBefore = await t.pool.query(
-        "SELECT count(*)::int as count FROM paykit_invoice WHERE customer_id = $1",
-        [customerId],
-      );
-      const invoiceCountBefore = (invoicesBefore.rows[0] as { count: number }).count;
+      const invoicesBeforeRows = await t.database
+        .select({ count: count() })
+        .from(invoice)
+        .where(eq(invoice.customerId, customerId));
+      const invoiceCountBefore = invoicesBeforeRows[0]?.count ?? 0;
 
       // Action: subscribe to same plan
       await t.paykit.subscribe({
@@ -61,24 +68,29 @@ describe("same-plan-noop: pro → pro", () => {
       });
 
       // Same product ID (no new row created)
-      const after = await t.pool.query(
-        `SELECT cp.id, cp.updated_at FROM paykit_customer_product cp
-         JOIN paykit_product p ON p.internal_id = cp.product_internal_id
-         WHERE cp.customer_id = $1 AND p.id = 'pro' AND cp.status = 'active'`,
-        [customerId],
-      );
-      const afterRow = after.rows[0] as { id: string; updated_at: string };
-      expect(afterRow.id).toBe(beforeRow.id);
+      const afterRows = await t.database
+        .select({ id: subscription.id, updatedAt: subscription.updatedAt })
+        .from(subscription)
+        .innerJoin(product, eq(product.internalId, subscription.productInternalId))
+        .where(
+          and(
+            eq(subscription.customerId, customerId),
+            eq(product.id, "pro"),
+            eq(subscription.status, "active"),
+          ),
+        );
+      const afterRow = afterRows[0];
+      expect(afterRow!.id).toBe(beforeRow!.id);
 
       // No new invoices
-      const invoicesAfter = await t.pool.query(
-        "SELECT count(*)::int as count FROM paykit_invoice WHERE customer_id = $1",
-        [customerId],
-      );
-      const invoiceCountAfter = (invoicesAfter.rows[0] as { count: number }).count;
+      const invoicesAfterRows = await t.database
+        .select({ count: count() })
+        .from(invoice)
+        .where(eq(invoice.customerId, customerId));
+      const invoiceCountAfter = invoicesAfterRows[0]?.count ?? 0;
       expect(invoiceCountAfter).toBe(invoiceCountBefore);
     } catch (error) {
-      await dumpStateOnFailure(t.pool, t.dbPath);
+      await dumpStateOnFailure(t.database, t.dbPath);
       throw error;
     }
   });

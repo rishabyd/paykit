@@ -1,5 +1,7 @@
+import { and, desc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
+import { product, subscription } from "../../../packages/paykit/src/database/schema";
 import {
   advanceTestClock,
   createTestCustomerWithPM,
@@ -30,7 +32,7 @@ describe("cancel-end-of-cycle: pro → free + clock advance", () => {
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b1 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
 
     const b2 = new Date();
     await t.paykit.subscribe({
@@ -38,7 +40,7 @@ describe("cancel-end-of-cycle: pro → free + clock advance", () => {
       planId: "free",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b2 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b2 });
   });
 
   afterAll(async () => {
@@ -48,16 +50,13 @@ describe("cancel-end-of-cycle: pro → free + clock advance", () => {
   it("advancing past period end activates the free plan", async () => {
     try {
       // Get period end to advance past
-      const subResult = await t.pool.query(
-        `SELECT s.current_period_end_at FROM paykit_subscription s
-         JOIN paykit_customer_product cp ON cp.subscription_id = s.id
-         WHERE cp.customer_id = $1
-         ORDER BY s.updated_at DESC LIMIT 1`,
-        [customerId],
-      );
-      const periodEnd = new Date(
-        (subResult.rows[0] as { current_period_end_at: string }).current_period_end_at,
-      );
+      const subRows = await t.database
+        .select({ currentPeriodEndAt: subscription.currentPeriodEndAt })
+        .from(subscription)
+        .where(eq(subscription.customerId, customerId))
+        .orderBy(desc(subscription.updatedAt))
+        .limit(1);
+      const periodEnd = new Date(subRows[0]!.currentPeriodEndAt as unknown as string);
 
       // Advance clock 1 day past period end
       const advanceTo = new Date(periodEnd.getTime() + 86_400_000);
@@ -65,27 +64,32 @@ describe("cancel-end-of-cycle: pro → free + clock advance", () => {
 
       // Poll until Free is active (real subscription.deleted webhook)
       for (let i = 0; i < 60; i++) {
-        const result = await t.pool.query(
-          `SELECT cp.status FROM paykit_customer_product cp
-           JOIN paykit_product p ON p.internal_id = cp.product_internal_id
-           WHERE cp.customer_id = $1 AND p.id = 'free' AND cp.status = 'active'`,
-          [customerId],
-        );
-        if (result.rows.length > 0) break;
+        const rows = await t.database
+          .select({ status: subscription.status })
+          .from(subscription)
+          .innerJoin(product, eq(product.internalId, subscription.productInternalId))
+          .where(
+            and(
+              eq(subscription.customerId, customerId),
+              eq(product.id, "free"),
+              eq(subscription.status, "active"),
+            ),
+          );
+        if (rows.length > 0) break;
         if (i === 59) throw new Error("Free plan never activated after clock advance");
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
 
       // Pro is canceled/ended
-      await expectProduct(t.pool, customerId, "pro", { status: "canceled" });
+      await expectProduct(t.database, customerId, "pro", { status: "canceled" });
 
       // Free is active with no period end (no billing cycle)
-      await expectProduct(t.pool, customerId, "free", {
+      await expectProduct(t.database, customerId, "free", {
         status: "active",
         hasPeriodEnd: false,
       });
     } catch (error) {
-      await dumpStateOnFailure(t.pool, t.dbPath);
+      await dumpStateOnFailure(t.database, t.dbPath);
       throw error;
     }
   });

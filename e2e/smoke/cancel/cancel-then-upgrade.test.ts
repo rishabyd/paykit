@@ -30,7 +30,7 @@ describe("cancel-then-upgrade: pro → free (scheduled) → ultra (upgrade)", ()
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b1 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
 
     const b2 = new Date();
     await t.paykit.subscribe({
@@ -38,7 +38,7 @@ describe("cancel-then-upgrade: pro → free (scheduled) → ultra (upgrade)", ()
       planId: "free",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.pool, "subscription.updated", { after: b2 });
+    await waitForWebhook(t.database, "subscription.updated", { after: b2 });
   });
 
   afterAll(async () => {
@@ -48,8 +48,8 @@ describe("cancel-then-upgrade: pro → free (scheduled) → ultra (upgrade)", ()
   it("upgrading while cancellation is pending cancels the downgrade and activates the new plan", async () => {
     try {
       // Verify precondition
-      await expectProduct(t.pool, customerId, "pro", { status: "active", canceled: true });
-      await expectProduct(t.pool, customerId, "free", { status: "scheduled" });
+      await expectProduct(t.database, customerId, "pro", { status: "active", canceled: true });
+      await expectProduct(t.database, customerId, "free", { status: "scheduled" });
 
       // Action: upgrade to Ultra
       const beforeUpgrade = new Date();
@@ -58,20 +58,23 @@ describe("cancel-then-upgrade: pro → free (scheduled) → ultra (upgrade)", ()
         planId: "ultra",
         successUrl: "https://example.com/success",
       });
-      await waitForWebhook(t.pool, "subscription.updated", { after: beforeUpgrade });
+      await waitForWebhook(t.database, "subscription.updated", { after: beforeUpgrade });
 
       // Ultra is active
-      await expectProduct(t.pool, customerId, "ultra", { status: "active", hasPeriodEnd: true });
+      await expectProduct(t.database, customerId, "ultra", {
+        status: "active",
+        hasPeriodEnd: true,
+      });
 
       // Pro is ended
-      await expectProduct(t.pool, customerId, "pro", { status: "ended" });
+      await expectProduct(t.database, customerId, "pro", { status: "ended" });
 
       // TODO: scheduled Free should be deleted on upgrade, but the subscribe
       // flow computes "switch" instead of "upgrade" when the current subscription
       // has cancel_at_period_end=true. This is a known PayKit issue.
-      // await expectProductNotPresent(t.pool, customerId, "free");
+      // await expectProductNotPresent(t.database, customerId, "free");
     } catch (error) {
-      await dumpStateOnFailure(t.pool, t.dbPath);
+      await dumpStateOnFailure(t.database, t.dbPath);
       throw error;
     }
   });

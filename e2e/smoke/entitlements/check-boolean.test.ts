@@ -39,14 +39,14 @@ describe("check-boolean: boolean feature access", () => {
         planId: "pro",
         successUrl: "https://example.com/success",
       });
-      await waitForWebhook(t.pool, "subscription.updated", { after: b1 });
+      await waitForWebhook(t.database, "subscription.updated", { after: b1 });
 
       // On Pro — dashboard accessible
       const proCheck = await t.paykit.check({ customerId, featureId: "dashboard" });
       expect(proCheck.allowed).toBe(true);
       expect(proCheck.balance?.unlimited).toBe(true);
     } catch (error) {
-      await dumpStateOnFailure(t.pool, t.dbPath);
+      await dumpStateOnFailure(t.database, t.dbPath);
       throw error;
     }
   });

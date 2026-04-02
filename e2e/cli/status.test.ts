@@ -1,4 +1,4 @@
-import pg from "pg";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { getStripeAccountInfo } from "../../packages/paykit/src/cli/utils/format";
@@ -103,9 +103,14 @@ describe("paykitjs status", () => {
   });
 
   it("should verify database connectivity", async () => {
-    const pool = new pg.Pool({ connectionString: fixture.dbUrl });
-    const result = await pool.query("SELECT 1 AS ok");
-    expect((result.rows[0] as { ok: number }).ok).toBe(1);
-    await pool.end();
+    const config = await getPayKitConfig({ cwd: fixture.cwd });
+    try {
+      const ctx = await createContext(config.options);
+      const result = await ctx.database.execute(sql`SELECT 1 AS ok`);
+      const row = result.rows[0] as { ok: number } | undefined;
+      expect(row?.ok).toBe(1);
+    } finally {
+      await config.options.database.end();
+    }
   });
 });
