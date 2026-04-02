@@ -1,13 +1,9 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "@/server/api/trpc";
 import { auth } from "@/server/auth";
 import { paykit, type PayKit } from "@/server/paykit";
-
-import type { PayKitContext } from "../../../../../../packages/paykit/src/core/context";
-import { product, subscription } from "../../../../../../packages/paykit/src/database/schema";
 
 export const paykitRouter = createTRPCRouter({
   currentPlans: publicProcedure.query(async ({ ctx }) => {
@@ -25,32 +21,8 @@ export const paykitRouter = createTRPCRouter({
       name: session.user.name ?? undefined,
     });
 
-    const paykitCtx = (await paykit.$context) as PayKitContext;
-
-    return paykitCtx.database
-      .select({
-        id: product.id,
-        name: product.name,
-        status: subscription.status,
-        canceled: subscription.canceled,
-        startedAt: subscription.startedAt,
-        currentPeriodEndAt: subscription.currentPeriodEndAt,
-        amount: product.priceAmount,
-        interval: product.priceInterval,
-      })
-      .from(subscription)
-      .innerJoin(product, eq(product.internalId, subscription.productInternalId))
-      .where(
-        and(
-          eq(subscription.customerId, session.user.id),
-          or(
-            isNull(subscription.endedAt),
-            sql`${subscription.endedAt} > now()`,
-            eq(subscription.status, "scheduled"),
-          ),
-        ),
-      )
-      .orderBy(desc(subscription.createdAt));
+    const customer = await paykit.getCustomer({ id: session.user.id });
+    return customer?.subscriptions ?? [];
   }),
 
   checkFeature: publicProcedure

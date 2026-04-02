@@ -166,6 +166,75 @@ export async function getCustomerByIdOrThrow(
   return existingCustomer;
 }
 
+export async function getCustomerWithDetails(
+  ctx: PayKitContext,
+  customerId: string,
+): Promise<CustomerWithDetails | null> {
+  const customerRow = await getCustomerById(ctx.database, customerId);
+  if (!customerRow) return null;
+
+  const subRows = await ctx.database
+    .select({
+      planId: product.id,
+      status: subscription.status,
+      cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+      currentPeriodStart: subscription.currentPeriodStartAt,
+      currentPeriodEnd: subscription.currentPeriodEndAt,
+    })
+    .from(subscription)
+    .innerJoin(product, eq(product.internalId, subscription.productInternalId))
+    .where(
+      and(
+        eq(subscription.customerId, customerId),
+        inArray(subscription.status, ["active", "trialing", "past_due", "scheduled"]),
+        or(isNull(subscription.endedAt), sql`${subscription.endedAt} > now()`),
+      ),
+    )
+    .orderBy(desc(subscription.createdAt));
+
+  const entRows = await ctx.database
+    .select({
+      featureId: entitlement.featureId,
+      balance: entitlement.balance,
+      limit: entitlement.limit,
+      nextResetAt: entitlement.nextResetAt,
+    })
+    .from(entitlement)
+    .innerJoin(subscription, eq(subscription.id, entitlement.subscriptionId))
+    .where(
+      and(
+        eq(entitlement.customerId, customerId),
+        inArray(subscription.status, ["active", "trialing", "past_due"]),
+        or(isNull(subscription.endedAt), sql`${subscription.endedAt} > now()`),
+      ),
+    );
+
+  const entitlements: Record<string, CustomerEntitlement> = {};
+  for (const row of entRows) {
+    const isUnlimited = row.limit === null;
+    entitlements[row.featureId] = {
+      featureId: row.featureId,
+      balance: row.balance ?? 0,
+      limit: row.limit ?? 0,
+      usage: isUnlimited ? 0 : (row.limit ?? 0) - (row.balance ?? 0),
+      unlimited: isUnlimited,
+      nextResetAt: row.nextResetAt,
+    };
+  }
+
+  return {
+    ...customerRow,
+    subscriptions: subRows.map((row) => ({
+      planId: row.planId,
+      status: row.status,
+      cancelAtPeriodEnd: row.cancelAtPeriodEnd,
+      currentPeriodStart: row.currentPeriodStart,
+      currentPeriodEnd: row.currentPeriodEnd,
+    })),
+    entitlements,
+  };
+}
+
 type ProviderCustomerMap = Record<string, { id: string }>;
 
 export function getProviderCustomerId(customerRow: Customer, providerId: string): string | null {

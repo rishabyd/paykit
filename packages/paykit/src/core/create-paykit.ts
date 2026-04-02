@@ -1,5 +1,6 @@
 import { createPayKitRouter, getEndpoints } from "../api";
 import {
+  getCustomerWithDetails,
   hardDeleteCustomer,
   listCustomers,
   syncCustomerWithDefaults,
@@ -59,6 +60,11 @@ export function createPayKit<const TOptions extends PayKitOptions>(
     async upsertCustomer(input) {
       const ctx = await getContext();
       return syncCustomerWithDefaults(ctx, input);
+    },
+
+    async getCustomer(input) {
+      const ctx = await getContext();
+      return getCustomerWithDetails(ctx, input.id);
     },
 
     async deleteCustomer(input) {

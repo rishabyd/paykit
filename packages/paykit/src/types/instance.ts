@@ -90,6 +90,7 @@ export interface PayKitInstance<TOptions extends PayKitOptions = PayKitOptions> 
     name?: string;
     metadata?: Record<string, string>;
   }): Promise<Customer>;
+  getCustomer(input: { id: string }): Promise<CustomerWithDetails | null>;
   deleteCustomer(input: { id: string }): Promise<{ success: true }>;
   listCustomers(input?: {
     limit?: number;
