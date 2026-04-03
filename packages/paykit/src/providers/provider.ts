@@ -78,7 +78,6 @@ export interface StripeRuntime {
   updateSubscription(data: {
     providerPriceId: string;
     providerSubscriptionId: string;
-    prorationBehavior?: "always_invoice" | "create_prorations" | "none";
   }): Promise<ProviderSubscriptionResult>;
 
   createInvoice(data: {

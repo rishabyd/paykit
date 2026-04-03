@@ -29,7 +29,6 @@ export const subscribe = createPayKitEndpoint(
       customerId,
       forceCheckout: ctx.body.forceCheckout,
       planId: ctx.body.planId,
-      prorationBehavior: ctx.body.prorationBehavior,
       successUrl: resolveSuccessUrl(ctx.request, ctx.body.successUrl),
     });
   },

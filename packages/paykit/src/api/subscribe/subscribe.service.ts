@@ -53,7 +53,6 @@ interface SubscribeContext {
   isUpgrade: boolean;
   shouldUseCheckout: boolean;
   trialDays: number | null;
-  prorationBehavior: "always_invoice" | "none";
   successUrl: string;
   cancelUrl?: string;
 }
@@ -167,7 +166,6 @@ async function setupSubscribeContext(
     isPaidTarget,
     isUpgrade,
     normalizedPlan,
-    prorationBehavior: input.prorationBehavior ?? "always_invoice",
     providerCustomerId,
     providerId,
     scheduledSubscriptions,
@@ -428,7 +426,6 @@ function evaluateStripePlan(
     return {
       ...noAction,
       subscriptionAction: {
-        prorationBehavior: subCtx.prorationBehavior,
         providerPriceId: subCtx.storedPlan.providerPriceId!,
         providerSubscriptionId: getProviderSubId(activeSubscription),
         type: "update",
@@ -559,7 +556,6 @@ export async function executeStripeAction(
 
   if (action.type === "update") {
     return ctx.stripe.updateSubscription({
-      prorationBehavior: action.prorationBehavior,
       providerPriceId: action.providerPriceId,
       providerSubscriptionId: action.providerSubscriptionId,
     });

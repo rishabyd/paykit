@@ -13,7 +13,6 @@ export const subscribeBodySchema = z.object({
   cancelUrl: z.string().url().optional(),
   customerId: z.string().optional(),
   forceCheckout: z.boolean().optional(),
-  prorationBehavior: z.enum(["always_invoice", "none"]).optional(),
 });
 
 export type SubscribeBody = z.infer<typeof subscribeBodySchema>;
@@ -32,7 +31,6 @@ export type StripeSubscriptionAction =
       type: "update";
       providerSubscriptionId: string;
       providerPriceId: string;
-      prorationBehavior: "always_invoice" | "none";
     }
   | {
       type: "cancel";

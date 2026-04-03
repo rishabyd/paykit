@@ -710,7 +710,7 @@ export function createStripeProvider(
           },
         ],
         payment_behavior: "pending_if_incomplete",
-        proration_behavior: data.prorationBehavior ?? "always_invoice",
+        proration_behavior: "always_invoice",
         expand: ["latest_invoice.payment_intent"],
       })) as StripeSubscriptionWithExtras;
 
