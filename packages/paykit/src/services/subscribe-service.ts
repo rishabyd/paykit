@@ -67,9 +67,9 @@ export async function subscribeToPlan(
   ctx: PayKitContext,
   input: SubscribeInput,
 ): Promise<SubscribeResult> {
-  return ctx.logger.trace("sub", async () => {
+  return ctx.logger.trace.run("sub", async () => {
     const startTime = Date.now();
-    ctx.logger.info(`subscribe started: planId=${input.planId} customerId=${input.customerId}`);
+    ctx.logger.info({ planId: input.planId, customerId: input.customerId }, "subscribe started");
 
     const subCtx = await setupSubscribeContext(ctx, input);
     const paykitPlan = computeBillingPlan(subCtx);
@@ -86,14 +86,14 @@ export async function subscribeToPlan(
             : subCtx.isUpgrade
               ? "upgrade"
               : "resume";
-    ctx.logger.info(`subscribe plan computed: ${action}`);
+    ctx.logger.info({ action }, "subscribe plan computed");
 
     const stripePlan = evaluateStripePlan(subCtx, paykitPlan);
     const billingPlan: BillingPlan = { paykit: paykitPlan, stripe: stripePlan };
     const result = await executeBillingPlan(ctx, subCtx, billingPlan);
 
     const duration = Date.now() - startTime;
-    ctx.logger.info(`subscribe completed: ${action} (${String(duration)}ms)`);
+    ctx.logger.info({ action, duration }, "subscribe completed");
 
     return result;
   });

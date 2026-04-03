@@ -119,7 +119,8 @@ export async function ensureDefaultPlansForCustomer(
 
     if (storedPlan.priceAmount !== null) {
       ctx.logger.warn(
-        `Skipping default plan "${defaultPlan.id}" for customer "${customerId}" because paid default plans are not auto-attached yet.`,
+        { planId: defaultPlan.id, customerId },
+        "skipping default plan: paid default plans are not auto-attached yet",
       );
       continue;
     }
@@ -331,7 +332,7 @@ export async function hardDeleteCustomer(ctx: PayKitContext, customerId: string)
       }
       await ctx.stripe.deleteCustomer({ providerCustomerId });
     } catch (error) {
-      ctx.logger.error(`Failed to clean up Stripe customer ${providerCustomerId}:`, error);
+      ctx.logger.error({ providerCustomerId, err: error }, "failed to clean up Stripe customer");
     }
   }
 

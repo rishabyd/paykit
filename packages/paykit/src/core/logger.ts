@@ -1,53 +1,53 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import type { PayKitLogger } from "../types/options";
+import pino from "pino";
+
 import { generateId } from "./utils";
 
-interface TraceContext {
-  traceId: string;
-}
+const storage = new AsyncLocalStorage<pino.Logger>();
 
-const storage = new AsyncLocalStorage<TraceContext>();
+export interface PayKitInternalLogger extends pino.Logger {
+  trace: pino.Logger["trace"] & {
+    run: <T>(prefix: string, fn: () => T | Promise<T>) => T | Promise<T>;
+  };
+}
 
 export function getTraceId(): string | undefined {
-  return storage.getStore()?.traceId;
+  const bindings = storage.getStore()?.bindings();
+  return bindings?.traceId as string | undefined;
 }
 
-const defaultConsoleLogger: PayKitLogger = {
-  debug: console.debug.bind(console),
-  info: console.info.bind(console),
-  warn: console.warn.bind(console),
-  error: console.error.bind(console),
-};
+export function createPayKitLogger(userLogger?: pino.Logger): PayKitInternalLogger {
+  const base =
+    userLogger ??
+    pino({
+      name: "paykit",
+    });
 
-export interface PayKitInternalLogger extends PayKitLogger {
-  trace: <T>(prefix: string, fn: () => T | Promise<T>) => T | Promise<T>;
-}
+  const handler: ProxyHandler<pino.Logger> = {
+    get(target, prop, receiver) {
+      // Intercept trace to add .run()
+      if (prop === "trace") {
+        const current = storage.getStore() ?? target;
+        const traceFn = current.trace.bind(current);
+        (traceFn as unknown as Record<string, unknown>).run = <T>(
+          prefix: string,
+          fn: () => T | Promise<T>,
+        ): T | Promise<T> => {
+          const child = current.child({ traceId: generateId(prefix, 12) });
+          return storage.run(child, fn);
+        };
+        return traceFn;
+      }
 
-export function createPayKitLogger(userLogger?: PayKitLogger): PayKitInternalLogger {
-  const base = userLogger ?? defaultConsoleLogger;
-
-  function prefix(): string {
-    const traceId = getTraceId();
-    return traceId ? `[${traceId}]` : "[paykit]";
-  }
-
-  return {
-    debug(message, ...args) {
-      base.debug(`${prefix()} ${message}`, ...args);
-    },
-    info(message, ...args) {
-      base.info(`${prefix()} ${message}`, ...args);
-    },
-    warn(message, ...args) {
-      base.warn(`${prefix()} ${message}`, ...args);
-    },
-    error(message, ...args) {
-      base.error(`${prefix()} ${message}`, ...args);
-    },
-    trace(tracePrefix, fn) {
-      const traceId = generateId(tracePrefix, 12);
-      return storage.run({ traceId }, fn);
+      const current = storage.getStore() ?? target;
+      const value = Reflect.get(current, prop, receiver);
+      if (typeof value === "function") {
+        return value.bind(current);
+      }
+      return value;
     },
   };
+
+  return new Proxy(base, handler) as PayKitInternalLogger;
 }

@@ -40,7 +40,7 @@ export function createPayKitRouter(ctx: PayKitContext, options: PayKitOptions) {
       basePath: options.basePath ?? "/paykit/api",
       routerContext: ctx,
       onError(e) {
-        ctx.logger.error("API error:", e);
+        ctx.logger.error({ err: e }, "API error");
       },
     },
   );

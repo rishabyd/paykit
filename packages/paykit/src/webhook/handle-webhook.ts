@@ -67,7 +67,7 @@ async function emitCustomerUpdated(ctx: PayKitContext, customerId: string): Prom
     });
   } catch (error) {
     // User event handlers must not poison webhook processing
-    ctx.logger.error("error in customer.updated event handler:", error);
+    ctx.logger.error({ err: error }, "error in customer.updated event handler");
   }
 }
 
@@ -652,7 +652,7 @@ export async function handleWebhook(
   ctx: PayKitContext,
   input: HandleWebhookInput,
 ): Promise<{ received: true }> {
-  return ctx.logger.trace("wh", async () => {
+  return ctx.logger.trace.run("wh", async () => {
     const startTime = Date.now();
     const events = await ctx.stripe.handleWebhook({
       body: input.body,
@@ -676,7 +676,7 @@ export async function handleWebhook(
     for (const [index, event] of events.entries()) {
       const providerEventId = getProviderEventId(event, index, parentEventId);
 
-      ctx.logger.info(`webhook received: ${event.name}`, { providerEventId });
+      ctx.logger.info({ event: event.name, providerEventId }, "webhook received");
 
       const shouldProcess = await beginWebhookEvent(ctx.database, {
         payload: event.payload as Record<string, unknown>,
@@ -686,7 +686,7 @@ export async function handleWebhook(
         type: event.name,
       });
       if (!shouldProcess) {
-        ctx.logger.info(`webhook skipped (duplicate): ${event.name}`, { providerEventId });
+        ctx.logger.info({ event: event.name, providerEventId }, "webhook skipped (duplicate)");
         continue;
       }
 
@@ -706,7 +706,7 @@ export async function handleWebhook(
           }
 
           for (const action of event.actions ?? []) {
-            ctx.logger.info(`applying action: ${action.type}`);
+            ctx.logger.info({ actionType: action.type }, "applying action");
             const customerId = await applyAction(txCtx, action);
             if (customerId) {
               ids.add(customerId);
@@ -723,7 +723,7 @@ export async function handleWebhook(
         }
 
         const duration = Date.now() - startTime;
-        ctx.logger.info(`webhook processed: ${event.name} (${String(duration)}ms)`);
+        ctx.logger.info({ event: event.name, duration }, "webhook processed");
 
         await finishWebhookEvent(ctx.database, {
           providerEventId,
@@ -733,7 +733,7 @@ export async function handleWebhook(
       } catch (error) {
         const duration = Date.now() - startTime;
         const errorDetail = error instanceof Error ? (error.stack ?? error.message) : String(error);
-        ctx.logger.error(`webhook failed: ${event.name} (${String(duration)}ms)`, errorDetail);
+        ctx.logger.error({ event: event.name, duration, err: error }, "webhook failed");
 
         await finishWebhookEvent(ctx.database, {
           error: errorDetail,
