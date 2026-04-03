@@ -1,9 +1,9 @@
 import * as z from "zod";
 
 import { PayKitError, PAYKIT_ERROR_CODES } from "../../core/errors";
-import { subscribeToPlan } from "../../services/subscribe-service";
 import { createPayKitEndpoint } from "../call";
 import { resolveCustomer } from "../resolve-customer";
+import { subscribeToPlan } from "./subscribe.service";
 
 function resolveSuccessUrl(request: Request | undefined, explicitSuccessUrl?: string): string {
   if (explicitSuccessUrl) {
