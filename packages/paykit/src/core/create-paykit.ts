@@ -1,14 +1,6 @@
-import { createPayKitRouter, getEndpoints } from "../api";
-import {
-  getCustomerWithDetails,
-  hardDeleteCustomer,
-  listCustomers,
-  syncCustomerWithDefaults,
-} from "../customer/customer.service";
-import { checkEntitlement, reportEntitlement } from "../entitlement/entitlement.service";
-import type { PayKitAPI, PayKitInstance } from "../types/instance";
+import { createPayKitRouter, getApi, getClientApi } from "../api/methods";
+import type { PayKitAPI, PayKitClientAPI, PayKitInstance } from "../types/instance";
 import type { PayKitOptions } from "../types/options";
-import { handleWebhook } from "../webhook/webhook.service";
 import { createContext, type PayKitContext } from "./context";
 
 const payKitInstanceSymbol = Symbol.for("paykit.instance");
@@ -29,6 +21,9 @@ export function createPayKit<const TOptions extends PayKitOptions>(
     contextPromise ??= createContext(options);
     return contextPromise;
   };
+
+  const api = getApi<TOptions>(getContext()) as PayKitAPI<TOptions>;
+  const clientApi = getClientApi(getContext()) as PayKitClientAPI<TOptions>;
 
   const paykit: PayKitInstance<TOptions> = {
     options,
@@ -53,50 +48,9 @@ export function createPayKit<const TOptions extends PayKitOptions>(
       return router.handler(request);
     },
 
-    get api() {
-      return getEndpoints(getContext()) as unknown as PayKitAPI<TOptions>;
-    },
-
-    async upsertCustomer(input) {
-      const ctx = await getContext();
-      return syncCustomerWithDefaults(ctx, input);
-    },
-
-    async getCustomer(input) {
-      const ctx = await getContext();
-      return getCustomerWithDetails(ctx, input.id);
-    },
-
-    async deleteCustomer(input) {
-      const ctx = await getContext();
-      await hardDeleteCustomer(ctx, input.id);
-      return { success: true };
-    },
-
-    async listCustomers(input) {
-      const ctx = await getContext();
-      return listCustomers(ctx, input);
-    },
-
-    async subscribe(input) {
-      const api = getEndpoints(getContext()) as unknown as PayKitAPI<TOptions>;
-      return api.subscribe({ body: input });
-    },
-
-    async check(input) {
-      const ctx = await getContext();
-      return checkEntitlement(ctx.database, input);
-    },
-
-    async report(input) {
-      const ctx = await getContext();
-      return reportEntitlement(ctx.database, input);
-    },
-
-    async handleWebhook(input) {
-      const ctx = await getContext();
-      return handleWebhook(ctx, input);
-    },
+    api,
+    $clientApi: clientApi,
+    ...api,
 
     get $context() {
       return getContext();

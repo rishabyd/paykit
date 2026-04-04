@@ -30,6 +30,11 @@ export type PayKitSubscribeInput<TOptions extends PayKitOptions = PayKitOptions>
   forceCheckout?: boolean;
 };
 
+export type PayKitClientSubscribeInput<TOptions extends PayKitOptions = PayKitOptions> = Omit<
+  PayKitSubscribeInput<TOptions>,
+  "customerId"
+>;
+
 export interface PayKitSubscribeResult {
   invoice?: {
     currency: string;
@@ -46,54 +51,96 @@ export interface PayKitSubscribeResult {
   } | null;
 }
 
-type PayKitEndpoint<TPath extends string, TBody, TResult> = ((ctx: {
-  body: TBody;
-}) => Promise<TResult>) & {
+export interface PayKitCustomerInput {
+  id: string;
+  email?: string;
+  name?: string;
+  metadata?: Record<string, string>;
+}
+
+export interface PayKitCustomerPortalInput {
+  returnUrl?: string;
+  customerId?: string;
+}
+
+export type PayKitClientCustomerPortalInput = Omit<PayKitCustomerPortalInput, "customerId">;
+
+export interface PayKitListCustomersInput {
+  limit?: number;
+  offset?: number;
+  planIds?: string[];
+}
+
+export type PayKitCheckInput<TOptions extends PayKitOptions = PayKitOptions> = {
+  customerId: string;
+  featureId: FeatureIdFromOptions<TOptions>;
+  required?: number;
+};
+
+export type PayKitClientCheckInput<TOptions extends PayKitOptions = PayKitOptions> = Omit<
+  PayKitCheckInput<TOptions>,
+  "customerId"
+>;
+
+export type PayKitReportInput<TOptions extends PayKitOptions = PayKitOptions> = {
+  customerId: string;
+  featureId: FeatureIdFromOptions<TOptions>;
+  amount?: number;
+};
+
+export type PayKitClientReportInput<TOptions extends PayKitOptions = PayKitOptions> = Omit<
+  PayKitReportInput<TOptions>,
+  "customerId"
+>;
+
+export interface PayKitWebhookInput {
+  body: string;
+  headers: Record<string, string>;
+}
+
+type PayKitMethod<TInput, TResult> = (input: TInput) => Promise<TResult>;
+
+type PayKitClientMethod<TPath extends string, TInput, TResult> = ((
+  input: TInput,
+) => Promise<TResult>) & {
   path: TPath;
   options: unknown;
 };
 
-export interface PayKitAPI<TOptions extends PayKitOptions = PayKitOptions> {
-  subscribe: PayKitEndpoint<"/subscribe", PayKitSubscribeInput<TOptions>, PayKitSubscribeResult>;
-  customerPortal: PayKitEndpoint<
+export interface PayKitClientAPI<TOptions extends PayKitOptions = PayKitOptions> {
+  subscribe: PayKitClientMethod<
+    "/subscribe",
+    PayKitClientSubscribeInput<TOptions>,
+    PayKitSubscribeResult
+  >;
+  customerPortal: PayKitClientMethod<
     "/customer-portal",
-    { returnUrl?: string; customerId?: string },
+    PayKitClientCustomerPortalInput,
     { url: string }
   >;
+  check: PayKitClientMethod<"/check", PayKitClientCheckInput<TOptions>, CheckResult>;
+  report: PayKitClientMethod<"/report", PayKitClientReportInput<TOptions>, ReportResult>;
 }
 
-export interface PayKitInstance<TOptions extends PayKitOptions = PayKitOptions> {
+export interface PayKitAPI<TOptions extends PayKitOptions = PayKitOptions> {
+  subscribe: PayKitMethod<PayKitSubscribeInput<TOptions>, PayKitSubscribeResult>;
+  customerPortal: PayKitMethod<PayKitCustomerPortalInput, { url: string }>;
+  upsertCustomer: PayKitMethod<PayKitCustomerInput, Customer>;
+  getCustomer: PayKitMethod<{ id: string }, CustomerWithDetails | null>;
+  deleteCustomer: PayKitMethod<{ id: string }, { success: true }>;
+  listCustomers: PayKitMethod<PayKitListCustomersInput | undefined, ListCustomersResult>;
+  check: PayKitMethod<PayKitCheckInput<TOptions>, CheckResult>;
+  report: PayKitMethod<PayKitReportInput<TOptions>, ReportResult>;
+  handleWebhook: PayKitMethod<PayKitWebhookInput, { received: true }>;
+}
+
+export interface PayKitInstance<
+  TOptions extends PayKitOptions = PayKitOptions,
+> extends PayKitAPI<TOptions> {
   options: TOptions;
   handler: (request: Request) => Promise<Response>;
   api: PayKitAPI<TOptions>;
-  upsertCustomer(input: {
-    id: string;
-    email?: string;
-    name?: string;
-    metadata?: Record<string, string>;
-  }): Promise<Customer>;
-  getCustomer(input: { id: string }): Promise<CustomerWithDetails | null>;
-  deleteCustomer(input: { id: string }): Promise<{ success: true }>;
-  listCustomers(input?: {
-    limit?: number;
-    offset?: number;
-    planIds?: string[];
-  }): Promise<ListCustomersResult>;
-  subscribe(input: PayKitSubscribeInput<TOptions>): Promise<PayKitSubscribeResult>;
-  check(input: {
-    customerId: string;
-    featureId: FeatureIdFromOptions<TOptions>;
-    required?: number;
-  }): Promise<CheckResult>;
-  report(input: {
-    customerId: string;
-    featureId: FeatureIdFromOptions<TOptions>;
-    amount?: number;
-  }): Promise<ReportResult>;
-  handleWebhook(input: {
-    body: string;
-    headers: Record<string, string>;
-  }): Promise<{ received: true }>;
+  $clientApi: PayKitClientAPI<TOptions>;
   $context: Promise<unknown>;
   $infer: {
     planId: PlanIdFromOptions<TOptions>;

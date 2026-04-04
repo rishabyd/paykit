@@ -1,4 +1,5 @@
-import { createPayKitEndpoint } from "../api/call";
+import { definePayKitMethod } from "../api/define-route";
+import { PayKitError, PAYKIT_ERROR_CODES } from "../core/errors";
 import { handleWebhook } from "./webhook.service";
 
 function headersToRecord(headers: Headers): Record<string, string> {
@@ -9,27 +10,31 @@ function headersToRecord(headers: Headers): Record<string, string> {
   return result;
 }
 
-export const webhook = createPayKitEndpoint(
-  "/webhook/:providerId",
+/** Applies an incoming provider webhook payload. */
+export const receiveWebhook = definePayKitMethod(
   {
-    method: "POST",
-    disableBody: true,
-    requireHeaders: true,
-    requireRequest: true,
+    route: {
+      disableBody: true,
+      method: "POST",
+      path: "/webhook/:providerId",
+      requireHeaders: true,
+      requireRequest: true,
+      resolveInput: async (ctx) => ({
+        body: await ctx.request!.text(),
+        headers: headersToRecord(ctx.headers ?? new Headers()),
+      }),
+    },
   },
   async (ctx) => {
-    if (ctx.params.providerId !== ctx.context.provider.id) {
-      throw ctx.error("BAD_REQUEST", {
-        code: "INVALID_WEBHOOK_PROVIDER",
-        message: "Webhook provider does not match this PayKit instance",
-      });
+    const providerId = ctx.params.providerId;
+    if (providerId && providerId !== ctx.paykit.provider.id) {
+      throw PayKitError.from(
+        "BAD_REQUEST",
+        PAYKIT_ERROR_CODES.PROVIDER_WEBHOOK_INVALID,
+        "Webhook provider does not match this PayKit instance",
+      );
     }
 
-    const body = await ctx.request.text();
-
-    return handleWebhook(ctx.context, {
-      body,
-      headers: headersToRecord(ctx.headers),
-    });
+    return handleWebhook(ctx.paykit, ctx.input);
   },
 );

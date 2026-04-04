@@ -1,5 +1,4 @@
-import { createPayKitEndpoint } from "../api/call";
-import { resolveCustomer } from "../api/resolve-customer";
+import { definePayKitMethod } from "../api/define-route";
 import { PayKitError, PAYKIT_ERROR_CODES } from "../core/errors";
 import { subscribeToPlan } from "./subscription.service";
 import { subscribeBodySchema } from "./subscription.types";
@@ -16,20 +15,24 @@ function resolveSuccessUrl(request: Request | undefined, explicitSuccessUrl?: st
   return new URL("/", request.url).toString();
 }
 
-export const subscribe = createPayKitEndpoint(
-  "/subscribe",
+/** Applies a subscription change for the resolved customer. */
+export const subscribe = definePayKitMethod(
   {
-    method: "POST",
-    body: subscribeBodySchema,
+    input: subscribeBodySchema,
+    requireCustomer: true,
+    route: {
+      client: true,
+      method: "POST",
+      path: "/subscribe",
+    },
   },
   async (ctx) => {
-    const customerId = await resolveCustomer(ctx.context, ctx.request, ctx.body.customerId);
-    return subscribeToPlan(ctx.context, {
-      cancelUrl: ctx.body.cancelUrl,
-      customerId,
-      forceCheckout: ctx.body.forceCheckout,
-      planId: ctx.body.planId,
-      successUrl: resolveSuccessUrl(ctx.request, ctx.body.successUrl),
+    return subscribeToPlan(ctx.paykit, {
+      cancelUrl: ctx.input.cancelUrl,
+      customerId: ctx.customer.id,
+      forceCheckout: ctx.input.forceCheckout,
+      planId: ctx.input.planId,
+      successUrl: resolveSuccessUrl(ctx.request, ctx.input.successUrl),
     });
   },
 );

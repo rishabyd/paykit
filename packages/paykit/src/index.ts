@@ -6,7 +6,14 @@ export type {
   CustomerSubscription,
   CustomerWithDetails,
   ListCustomersResult,
+  PayKitClientCheckInput,
+  PayKitClientCustomerPortalInput,
+  PayKitClientReportInput,
+  PayKitClientSubscribeInput,
   PayKitInstance,
+  PayKitCheckInput,
+  PayKitCustomerPortalInput,
+  PayKitReportInput,
   PayKitSubscribeInput,
   PayKitSubscribeResult,
 } from "./types/instance";
@@ -65,4 +72,4 @@ export type { PayKitErrorCode } from "./core/errors";
 export { defineErrorCodes } from "./core/error-codes";
 export type { RawError } from "./core/error-codes";
 export { feature, plan } from "./types/schema";
-export { createPayKitEndpoint } from "./api/call";
+export { createPayKitEndpoint, definePayKitMethod, definePayKitRoute } from "./api/define-route";
