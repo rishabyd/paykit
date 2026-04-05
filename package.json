@@ -47,8 +47,6 @@
       "**/settings.local.json",
       "ob"
     ],
-    "run": [
-      "pnpm install"
-    ]
+    "run": []
   }
 }
