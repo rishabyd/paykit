@@ -1,6 +1,7 @@
 import { createFetch } from "@better-fetch/fetch";
 
 import type { clientMethods } from "../api/methods";
+import type { PayKitClientApiCarrier } from "../types/instance";
 
 export interface PayKitClientOptions {
   baseURL?: string;
@@ -62,17 +63,8 @@ type InferBody<E> = E extends (ctx: infer C) => unknown ? C : never;
 
 type InferReturn<E> = E extends (...args: never[]) => Promise<infer R> ? R : never;
 
-type InferClientAPI<Instance> = Instance extends { $clientApi: infer API }
-  ? UnionToIntersection<
-      {
-        [K in keyof API]: API[K] extends { path: infer P }
-          ? P extends string
-            ? PathToMethod<P, (body: InferBody<API[K]>) => Promise<InferReturn<API[K]>>>
-            : never
-          : never;
-      }[keyof API]
-    >
-  : Instance extends { api: infer API }
+type InferClientAPI<Instance> =
+  Instance extends PayKitClientApiCarrier<infer API>
     ? UnionToIntersection<
         {
           [K in keyof API]: API[K] extends { path: infer P }

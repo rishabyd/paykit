@@ -100,6 +100,8 @@ export interface PayKitWebhookInput {
   headers: Record<string, string>;
 }
 
+export declare const payKitClientApiBrand: unique symbol;
+
 type PayKitMethod<TInput, TResult> = (input: TInput) => Promise<TResult>;
 
 type PayKitClientMethod<TPath extends string, TInput, TResult> = ((
@@ -108,6 +110,10 @@ type PayKitClientMethod<TPath extends string, TInput, TResult> = ((
   path: TPath;
   options: unknown;
 };
+
+export interface PayKitClientApiCarrier<TClientApi> {
+  readonly [payKitClientApiBrand]?: TClientApi;
+}
 
 export interface PayKitClientAPI<TOptions extends PayKitOptions = PayKitOptions> {
   subscribe: PayKitClientMethod<
@@ -136,12 +142,10 @@ export interface PayKitAPI<TOptions extends PayKitOptions = PayKitOptions> {
   handleWebhook: PayKitMethod<PayKitWebhookInput, { received: true }>;
 }
 
-export interface PayKitInstance<
-  TOptions extends PayKitOptions = PayKitOptions,
-> extends PayKitAPI<TOptions> {
+export interface PayKitInstance<TOptions extends PayKitOptions = PayKitOptions>
+  extends PayKitAPI<TOptions>, PayKitClientApiCarrier<PayKitClientAPI<TOptions>> {
   options: TOptions;
   handler: (request: Request) => Promise<Response>;
-  $clientApi: PayKitClientAPI<TOptions>;
   $context: Promise<unknown>;
   $infer: {
     planId: PlanIdFromOptions<TOptions>;

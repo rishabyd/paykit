@@ -1,5 +1,5 @@
-import { createPayKitRouter, getApi, getClientApi } from "../api/methods";
-import type { PayKitAPI, PayKitClientAPI, PayKitInstance } from "../types/instance";
+import { createPayKitRouter, getApi } from "../api/methods";
+import type { PayKitAPI, PayKitInstance } from "../types/instance";
 import type { PayKitOptions } from "../types/options";
 import { createContext, type PayKitContext } from "./context";
 
@@ -23,8 +23,6 @@ export function createPayKit<const TOptions extends PayKitOptions>(
   };
 
   const api = getApi<TOptions>(getContext()) as PayKitAPI<TOptions>;
-  const clientApi = getClientApi(getContext()) as PayKitClientAPI<TOptions>;
-
   const paykit: PayKitInstance<TOptions> = {
     options,
 
@@ -48,7 +46,6 @@ export function createPayKit<const TOptions extends PayKitOptions>(
       return router.handler(request);
     },
 
-    $clientApi: clientApi,
     ...api,
 
     get $context() {
