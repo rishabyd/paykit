@@ -48,7 +48,6 @@ export function createPayKit<const TOptions extends PayKitOptions>(
       return router.handler(request);
     },
 
-    api,
     $clientApi: clientApi,
     ...api,
 

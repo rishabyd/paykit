@@ -141,7 +141,6 @@ export interface PayKitInstance<
 > extends PayKitAPI<TOptions> {
   options: TOptions;
   handler: (request: Request) => Promise<Response>;
-  api: PayKitAPI<TOptions>;
   $clientApi: PayKitClientAPI<TOptions>;
   $context: Promise<unknown>;
   $infer: {
