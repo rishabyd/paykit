@@ -16,7 +16,7 @@
     "lint": "oxlint --deny-warnings",
     "lint:fix": "oxlint --fix",
     "prepare": "simple-git-hooks",
-    "tree-setup": "cp $ROOT_PATH/.env ./ && cp $ROOT_PATH/landing/.env ./landing/ && cp $ROOT_PATH/apps/demo/.env ./apps/demo/ && pnpm install"
+    "tree-setup": "cp $ROOT_PATH/.env ./ && cp $ROOT_PATH/landing/.env ./landing/ && cp $ROOT_PATH/apps/demo/.env ./apps/demo/ && ln -s '/Users/maxktz/Library/Mobile Documents/com~apple~CloudDocs/PayKit/paykit-docs' ob && pnpm install"
   },
   "devDependencies": {
     "@types/node": "catalog:",
