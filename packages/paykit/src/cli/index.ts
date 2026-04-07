@@ -2,18 +2,18 @@
 
 import { Command } from "commander";
 
+import { checkCommand } from "./commands/check";
 import { initCommand } from "./commands/init";
 import { pushCommand } from "./commands/push";
-import { statusCommand } from "./commands/status";
 import { telemetryCommand } from "./commands/telemetry";
 import { captureError, flush } from "./utils/telemetry";
 
 const program = new Command()
   .name("paykitjs")
   .description("CLI for PayKit")
+  .addCommand(checkCommand)
   .addCommand(initCommand)
   .addCommand(pushCommand)
-  .addCommand(statusCommand)
   .addCommand(telemetryCommand);
 
 try {
