@@ -9,6 +9,7 @@ import { pool } from "@/server/db";
 import { free, pro, ultra } from "./plans";
 
 export const paykit = createPayKit({
+  testing: { enabled: true },
   database: pool,
   provider: stripe({
     secretKey: env.STRIPE_SECRET_KEY,
@@ -25,9 +26,7 @@ export const paykit = createPayKit({
   ],
   identify: async (request) => {
     const session = await auth.api.getSession({ headers: request.headers });
-    if (!session) {
-      throw new Error("Not authenticated");
-    }
+    if (!session) return null;
     return {
       customerId: session.user.id,
       email: session.user.email,

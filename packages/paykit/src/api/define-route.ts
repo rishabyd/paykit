@@ -124,6 +124,29 @@ type InferRouteContext<TConfig extends PayKitMethodConfig> = TConfig["route"] ex
       PayKitContext
     >;
 
+type InferRoutePath<TConfig extends PayKitMethodConfig> = TConfig["route"] extends {
+  path: infer TPath extends string;
+}
+  ? TPath
+  : never;
+
+type InferClientRoute<TConfig extends PayKitMethodConfig> = TConfig["route"] extends {
+  client: true;
+}
+  ? true
+  : false;
+
+type InferMethodMeta<TConfig extends PayKitMethodConfig> = [InferRoutePath<TConfig>] extends [never]
+  ? {
+      client?: boolean;
+      endpoint?: { options: unknown; path: string } & Record<string, unknown>;
+    }
+  : {
+      endpoint: { options: unknown; path: InferRoutePath<TConfig> } & Record<string, unknown>;
+    } & (InferClientRoute<TConfig> extends true
+      ? { client: true }
+      : { client?: false | undefined });
+
 export function definePayKitMethod<const TConfig extends PayKitMethodConfig, TResult>(
   config: TConfig,
   handler: (
@@ -135,7 +158,7 @@ export function definePayKitMethod<const TConfig extends PayKitMethodConfig, TRe
       InferRouteContext<TConfig>["request"]
     >,
   ) => Promise<TResult> | TResult,
-): PayKitMethod<ServerMethodInput<TConfig>, TResult> {
+): PayKitMethod<ServerMethodInput<TConfig>, TResult> & InferMethodMeta<TConfig> {
   const call = async (
     paykit: PayKitContext,
     input: ServerMethodInput<TConfig>,
@@ -218,7 +241,8 @@ export function definePayKitMethod<const TConfig extends PayKitMethodConfig, TRe
     >;
   }
 
-  return call as PayKitMethod<ServerMethodInput<TConfig>, TResult>;
+  return call as unknown as PayKitMethod<ServerMethodInput<TConfig>, TResult> &
+    InferMethodMeta<TConfig>;
 }
 
 export function returnUrl(): PayKitReturnUrlSchema {
@@ -404,6 +428,10 @@ async function resolveCustomer(
 ): Promise<Customer> {
   if (ctx.options.identify && request) {
     const identity = await ctx.options.identify(request);
+
+    if (!identity) {
+      throw PayKitError.from("UNAUTHORIZED", PAYKIT_ERROR_CODES.IDENTIFY_REQUIRED);
+    }
 
     if (explicitCustomerId && explicitCustomerId !== identity.customerId) {
       throw PayKitError.from("FORBIDDEN", PAYKIT_ERROR_CODES.CUSTOMER_ID_MISMATCH);

@@ -4,9 +4,11 @@ import {
   createTestCustomerWithPM,
   createTestPayKit,
   dumpStateOnFailure,
+  expectExactMeteredBalance,
+  expectNoScheduledPlanInGroup,
   expectProduct,
+  expectSingleActivePlanInGroup,
   type TestPayKit,
-  waitForWebhook,
 } from "../setup";
 
 describe("upgrade-immediate: pro → ultra", () => {
@@ -15,21 +17,22 @@ describe("upgrade-immediate: pro → ultra", () => {
 
   beforeAll(async () => {
     t = await createTestPayKit();
-    const customer = await createTestCustomerWithPM(t, {
-      id: "test_upgrade",
-      email: "upgrade@test.com",
-      name: "Upgrade Test",
+    const customer = await createTestCustomerWithPM({
+      t,
+      customer: {
+        id: "test_upgrade",
+        email: "upgrade@test.com",
+        name: "Upgrade Test",
+      },
     });
     customerId = customer.customerId;
 
     // Setup: subscribe to Pro first
-    const beforeSetup = new Date();
     await t.paykit.subscribe({
       customerId,
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.database, "subscription.updated", { after: beforeSetup });
   });
 
   afterAll(async () => {
@@ -38,24 +41,48 @@ describe("upgrade-immediate: pro → ultra", () => {
 
   it("upgrading to a higher tier activates it immediately and ends the old plan", async () => {
     try {
-      const beforeUpgrade = new Date();
-
       await t.paykit.subscribe({
         customerId,
         planId: "ultra",
         successUrl: "https://example.com/success",
       });
 
-      await waitForWebhook(t.database, "subscription.updated", { after: beforeUpgrade });
-
       // Ultra is active with period dates
-      await expectProduct(t.database, customerId, "ultra", {
-        status: "active",
-        hasPeriodEnd: true,
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "ultra",
+        expected: {
+          status: "active",
+          hasPeriodEnd: true,
+        },
+      });
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "ultra",
+      });
+      await expectNoScheduledPlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+      });
+      await expectExactMeteredBalance({
+        paykit: t.paykit,
+        customerId,
+        featureId: "messages",
+        limit: 10_000,
+        remaining: 10_000,
       });
 
       // Pro is ended
-      await expectProduct(t.database, customerId, "pro", { status: "ended" });
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "pro",
+        expected: { status: "ended" },
+      });
     } catch (error) {
       await dumpStateOnFailure(t.database, t.dbPath);
       throw error;

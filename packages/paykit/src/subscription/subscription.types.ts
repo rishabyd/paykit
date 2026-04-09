@@ -1,7 +1,6 @@
 import * as z from "zod";
 
 import { returnUrl } from "../api/define-route";
-import type { PayKitSubscribeResult } from "../types/instance";
 import type { StoredSubscription } from "../types/models";
 
 export const subscribeBodySchema = z.object({
@@ -17,7 +16,21 @@ export type SubscribeInput = SubscribeBody & {
   customerId: string;
 };
 
-export type SubscribeResult = PayKitSubscribeResult;
+export interface SubscribeResult {
+  invoice?: {
+    currency: string;
+    hostedUrl: string | null;
+    providerInvoiceId: string;
+    status: string | null;
+    totalAmount: number;
+  };
+  paymentUrl: string | null;
+  requiredAction?: {
+    clientSecret?: string;
+    paymentIntentId?: string;
+    type: string;
+  } | null;
+}
 
 export interface SubscriptionWithCatalog extends StoredSubscription {
   planId: string;

@@ -1,4 +1,0 @@
-{
-  "title": "Databases",
-  "pages": ["postgres", "sqlite", "drizzle-adapter", "prisma-adapter"]
-}

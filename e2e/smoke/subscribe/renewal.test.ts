@@ -7,7 +7,9 @@ import {
   createTestCustomerWithPM,
   createTestPayKit,
   dumpStateOnFailure,
+  expectExactMeteredBalance,
   expectProduct,
+  expectSingleActivePlanInGroup,
   type TestPayKit,
   waitForWebhook,
 } from "../setup";
@@ -18,29 +20,44 @@ describe("renewal: pro subscription renews after 1 month", () => {
 
   beforeAll(async () => {
     t = await createTestPayKit();
-    const customer = await createTestCustomerWithPM(t, {
-      id: "test_renewal",
-      email: "renewal@test.com",
-      name: "Renewal Test",
+    const customer = await createTestCustomerWithPM({
+      t,
+      customer: {
+        id: "test_renewal",
+        email: "renewal@test.com",
+        name: "Renewal Test",
+      },
     });
     customerId = customer.customerId;
 
     // Setup: subscribe to Pro
-    const b1 = new Date();
     await t.paykit.subscribe({
       customerId,
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
   });
 
   afterAll(async () => {
     await t?.cleanup();
   });
 
-  it("advancing clock 1 month rolls period dates forward", async () => {
+  it("advancing clock 1 month rolls period dates forward and resets usage", async () => {
     try {
+      const usage = await t.paykit.report({
+        customerId,
+        featureId: "messages",
+        amount: 37,
+      });
+      expect(usage.success).toBe(true);
+      await expectExactMeteredBalance({
+        paykit: t.paykit,
+        customerId,
+        featureId: "messages",
+        limit: 500,
+        remaining: 463,
+      });
+
       // Record current period end
       const subRows = await t.database
         .select({ currentPeriodEndAt: subscription.currentPeriodEndAt })
@@ -52,9 +69,20 @@ describe("renewal: pro subscription renews after 1 month", () => {
 
       // Advance clock 1 day past period end
       const advanceTo = new Date(periodEnd.getTime() + 86_400_000);
-      await advanceTestClock(t.stripeClient, t.testClockId, advanceTo.toISOString().split("T")[0]!);
+      const beforeAdvance = new Date();
+      await advanceTestClock({
+        t,
+        customerId,
+        frozenTime: advanceTo,
+      });
+      await waitForWebhook({
+        after: beforeAdvance,
+        database: t.database,
+        eventType: "subscription.updated",
+        timeout: 30_000,
+      });
 
-      // Poll until period dates change (real subscription.updated webhook)
+      // Poll until period dates change after the forwarded renewal event is processed
       let newPeriodEnd = periodEnd;
       for (let i = 0; i < 60; i++) {
         const rows = await t.database
@@ -79,7 +107,25 @@ describe("renewal: pro subscription renews after 1 month", () => {
       expect(newPeriodEnd.getTime()).toBeGreaterThan(periodEnd.getTime());
 
       // Pro is still active
-      await expectProduct(t.database, customerId, "pro", { status: "active" });
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "pro",
+        expected: { status: "active" },
+      });
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "pro",
+      });
+      await expectExactMeteredBalance({
+        paykit: t.paykit,
+        customerId,
+        featureId: "messages",
+        limit: 500,
+        remaining: 500,
+      });
     } catch (error) {
       await dumpStateOnFailure(t.database, t.dbPath);
       throw error;

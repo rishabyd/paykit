@@ -1,5 +1,7 @@
 import { defineConfig, defineDocs } from "fumadocs-mdx/config";
 
+import { shikiThemes } from "./src/lib/shiki-themes";
+
 export const docs = defineDocs({
   dir: "./content/docs",
 });
@@ -7,10 +9,7 @@ export const docs = defineDocs({
 export default defineConfig({
   mdxOptions: {
     rehypeCodeOptions: {
-      themes: {
-        light: "github-light",
-        dark: "one-dark-pro",
-      },
+      themes: shikiThemes,
     },
   },
 });

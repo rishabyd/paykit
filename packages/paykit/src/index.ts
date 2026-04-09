@@ -1,15 +1,17 @@
 export { createPayKit } from "./core/create-paykit";
 
-export type { PayKitLoggingOptions, PayKitOptions } from "./types/options";
+export type { PayKitLoggingOptions, PayKitOptions, PayKitTestingOptions } from "./types/options";
 export type {
   CustomerEntitlement,
   CustomerSubscription,
   CustomerWithDetails,
   ListCustomersResult,
-  PayKitClientCheckInput,
+  PayKitAdvanceTestClockInput,
+  PayKitClientAdvanceTestClockInput,
   PayKitClientCustomerPortalInput,
-  PayKitClientReportInput,
+  PayKitClientGetTestClockInput,
   PayKitClientSubscribeInput,
+  PayKitGetTestClockInput,
   PayKitInstance,
   PayKitCheckInput,
   PayKitCustomerPortalInput,
@@ -23,7 +25,10 @@ export type {
   ReportResult,
 } from "./entitlement/entitlement.service";
 export type {
+  ProviderCustomer,
+  ProviderCustomerMap,
   PayKitProvider,
+  ProviderTestClock,
   StripeProviderConfig,
   StripeProviderOptions,
 } from "./providers/provider";

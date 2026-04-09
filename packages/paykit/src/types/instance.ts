@@ -4,12 +4,18 @@ export type {
   CustomerWithDetails,
   ListCustomersResult,
 } from "../customer/customer.types";
+import type { PayKitMethod as DefinedPayKitMethod } from "../api/define-route";
+import type {
+  methods as registeredMethods,
+  testingMethods as registeredTestingMethods,
+} from "../api/methods";
 import type { PayKitContext } from "../core/context";
-import type { CustomerWithDetails, ListCustomersResult } from "../customer/customer.types";
-import type { CheckResult, ReportResult } from "../entitlement/entitlement.service";
-import type { Customer } from "./models";
 import type { PayKitOptions } from "./options";
 import type { FeatureIdFromPlans, PlanIdFromPlans } from "./schema";
+
+type RegisteredMethods = typeof registeredMethods;
+type RegisteredMethodKey = keyof RegisteredMethods;
+type RegisteredTestingMethodKey = keyof typeof registeredTestingMethods;
 
 type PlanIdFromOptions<TOptions extends PayKitOptions> = [
   PlanIdFromPlans<TOptions["plans"]>,
@@ -23,83 +29,119 @@ type FeatureIdFromOptions<TOptions extends PayKitOptions> = [
   ? string
   : FeatureIdFromPlans<TOptions["plans"]>;
 
-export type PayKitClientSubscribeInput<TOptions extends PayKitOptions = PayKitOptions> = {
-  planId: PlanIdFromOptions<TOptions>;
-  successUrl?: string;
-  cancelUrl?: string;
-  forceCheckout?: boolean;
-};
+type InferMethodInput<TMethod> =
+  TMethod extends DefinedPayKitMethod<infer TInput, unknown> ? TInput : never;
+
+type InferMethodResult<TMethod> =
+  TMethod extends DefinedPayKitMethod<infer _TInput, infer TResult> ? TResult : never;
+
+type InferMethodPath<TMethod> = TMethod extends {
+  endpoint: { path: infer TPath extends string };
+}
+  ? TPath
+  : never;
+
+type OmitCustomerId<TInput> = TInput extends undefined
+  ? undefined
+  : TInput extends object
+    ? Omit<TInput, "customerId">
+    : TInput;
+
+type RefineServerMethodInput<
+  TOptions extends PayKitOptions,
+  TKey extends RegisteredMethodKey,
+  TInput,
+> = TKey extends "subscribe"
+  ? TInput extends { cancelUrl?: string; forceCheckout?: boolean; successUrl?: string }
+    ? TInput & {
+        customerId: string;
+        planId: PlanIdFromOptions<TOptions>;
+        successUrl: string;
+      }
+    : TInput
+  : TKey extends "check" | "report"
+    ? TInput extends { featureId: string }
+      ? Omit<TInput, "featureId"> & {
+          featureId: FeatureIdFromOptions<TOptions>;
+        }
+      : TInput
+    : TInput;
+
+type RefineClientMethodInput<
+  TOptions extends PayKitOptions,
+  TKey extends RegisteredMethodKey,
+  TInput,
+> = TKey extends "subscribe"
+  ? OmitCustomerId<TInput> extends {
+      cancelUrl?: string;
+      forceCheckout?: boolean;
+      successUrl?: string;
+    }
+    ? Omit<OmitCustomerId<TInput>, "planId"> & {
+        planId: PlanIdFromOptions<TOptions>;
+      }
+    : OmitCustomerId<TInput>
+  : TKey extends "customerPortal"
+    ? OmitCustomerId<TInput> extends { returnUrl: string }
+      ? Omit<OmitCustomerId<TInput>, "returnUrl"> & { returnUrl?: string }
+      : OmitCustomerId<TInput>
+    : OmitCustomerId<TInput>;
+
+export type PayKitClientSubscribeInput<TOptions extends PayKitOptions = PayKitOptions> =
+  RefineClientMethodInput<TOptions, "subscribe", InferMethodInput<RegisteredMethods["subscribe"]>>;
 
 export type PayKitSubscribeInput<TOptions extends PayKitOptions = PayKitOptions> =
-  PayKitClientSubscribeInput<TOptions> & {
-    customerId: string;
-    successUrl: string;
-  };
+  RefineServerMethodInput<TOptions, "subscribe", InferMethodInput<RegisteredMethods["subscribe"]>>;
 
-export interface PayKitSubscribeResult {
-  invoice?: {
-    currency: string;
-    hostedUrl: string | null;
-    providerInvoiceId: string;
-    status: string | null;
-    totalAmount: number;
-  };
-  paymentUrl: string | null;
-  requiredAction?: {
-    clientSecret?: string;
-    paymentIntentId?: string;
-    type: string;
-  } | null;
-}
+export type PayKitSubscribeResult = InferMethodResult<RegisteredMethods["subscribe"]>;
 
-export interface PayKitCustomerInput {
-  id: string;
-  email?: string;
-  name?: string;
-  metadata?: Record<string, string>;
-}
+export type PayKitCustomerInput = InferMethodInput<RegisteredMethods["upsertCustomer"]>;
 
-export interface PayKitClientCustomerPortalInput {
-  returnUrl?: string;
-}
-
-export interface PayKitCustomerPortalInput extends PayKitClientCustomerPortalInput {
-  customerId: string;
-  returnUrl: string;
-}
-
-export interface PayKitListCustomersInput {
-  limit?: number;
-  offset?: number;
-  planIds?: string[];
-}
-
-export type PayKitCheckInput<TOptions extends PayKitOptions = PayKitOptions> = {
-  customerId: string;
-  featureId: FeatureIdFromOptions<TOptions>;
-  required?: number;
-};
-
-export type PayKitClientCheckInput<TOptions extends PayKitOptions = PayKitOptions> = Omit<
-  PayKitCheckInput<TOptions>,
-  "customerId"
+export type PayKitClientCustomerPortalInput = RefineClientMethodInput<
+  PayKitOptions,
+  "customerPortal",
+  InferMethodInput<RegisteredMethods["customerPortal"]>
 >;
 
-export type PayKitReportInput<TOptions extends PayKitOptions = PayKitOptions> = {
-  customerId: string;
-  featureId: FeatureIdFromOptions<TOptions>;
-  amount?: number;
-};
-
-export type PayKitClientReportInput<TOptions extends PayKitOptions = PayKitOptions> = Omit<
-  PayKitReportInput<TOptions>,
-  "customerId"
+export type PayKitCustomerPortalInput = RefineServerMethodInput<
+  PayKitOptions,
+  "customerPortal",
+  InferMethodInput<RegisteredMethods["customerPortal"]>
 >;
 
-export interface PayKitWebhookInput {
-  body: string;
-  headers: Record<string, string>;
-}
+export type PayKitListCustomersInput = InferMethodInput<RegisteredMethods["listCustomers"]>;
+
+export type PayKitClientGetTestClockInput = RefineClientMethodInput<
+  PayKitOptions,
+  "getTestClock",
+  InferMethodInput<RegisteredMethods["getTestClock"]>
+>;
+
+export type PayKitGetTestClockInput = RefineServerMethodInput<
+  PayKitOptions,
+  "getTestClock",
+  InferMethodInput<RegisteredMethods["getTestClock"]>
+>;
+
+export type PayKitClientAdvanceTestClockInput = RefineClientMethodInput<
+  PayKitOptions,
+  "advanceTestClock",
+  InferMethodInput<RegisteredMethods["advanceTestClock"]>
+>;
+
+export type PayKitAdvanceTestClockInput = RefineServerMethodInput<
+  PayKitOptions,
+  "advanceTestClock",
+  InferMethodInput<RegisteredMethods["advanceTestClock"]>
+>;
+
+export type PayKitCheckInput<TOptions extends PayKitOptions = PayKitOptions> =
+  RefineServerMethodInput<TOptions, "check", InferMethodInput<RegisteredMethods["check"]>>;
+
+export type PayKitReportInput<TOptions extends PayKitOptions = PayKitOptions> =
+  RefineServerMethodInput<TOptions, "report", InferMethodInput<RegisteredMethods["report"]>>;
+
+export type PayKitWebhookInput = InferMethodInput<RegisteredMethods["handleWebhook"]>;
 
 export declare const payKitClientApiBrand: unique symbol;
 
@@ -112,44 +154,55 @@ type PayKitClientMethod<TPath extends string, TInput, TResult> = ((
   options: unknown;
 };
 
+type TestingEnabled<TOptions extends PayKitOptions> = TOptions["testing"] extends { enabled: true }
+  ? true
+  : false;
+
+type EnabledMethodKeys<TOptions extends PayKitOptions> =
+  TestingEnabled<TOptions> extends true
+    ? RegisteredMethodKey
+    : Exclude<RegisteredMethodKey, RegisteredTestingMethodKey>;
+
+type ClientMethodKeys = {
+  [K in RegisteredMethodKey]-?: RegisteredMethods[K] extends { client: true } ? K : never;
+}[RegisteredMethodKey];
+
+type EnabledClientMethodKeys<TOptions extends PayKitOptions> =
+  TestingEnabled<TOptions> extends true
+    ? ClientMethodKeys
+    : Exclude<ClientMethodKeys, RegisteredTestingMethodKey>;
+
+type GeneratePayKitAPI<TOptions extends PayKitOptions> = {
+  [K in EnabledMethodKeys<TOptions>]: PayKitMethod<
+    RefineServerMethodInput<TOptions, K, InferMethodInput<RegisteredMethods[K]>>,
+    InferMethodResult<RegisteredMethods[K]>
+  >;
+};
+
+type GeneratePayKitClientAPI<TOptions extends PayKitOptions> = {
+  [K in EnabledClientMethodKeys<TOptions>]: PayKitClientMethod<
+    InferMethodPath<RegisteredMethods[K]>,
+    RefineClientMethodInput<TOptions, K, InferMethodInput<RegisteredMethods[K]>>,
+    InferMethodResult<RegisteredMethods[K]>
+  >;
+};
+
 export interface PayKitClientApiCarrier<TClientApi> {
   readonly [payKitClientApiBrand]?: TClientApi;
 }
 
-export interface PayKitClientAPI<TOptions extends PayKitOptions = PayKitOptions> {
-  subscribe: PayKitClientMethod<
-    "/subscribe",
-    PayKitClientSubscribeInput<TOptions>,
-    PayKitSubscribeResult
-  >;
-  customerPortal: PayKitClientMethod<
-    "/customer-portal",
-    PayKitClientCustomerPortalInput,
-    { url: string }
-  >;
-  check: PayKitClientMethod<"/check", PayKitClientCheckInput<TOptions>, CheckResult>;
-  report: PayKitClientMethod<"/report", PayKitClientReportInput<TOptions>, ReportResult>;
-}
+export type PayKitClientAPI<TOptions extends PayKitOptions = PayKitOptions> =
+  GeneratePayKitClientAPI<TOptions>;
 
-export interface PayKitAPI<TOptions extends PayKitOptions = PayKitOptions> {
-  subscribe: PayKitMethod<PayKitSubscribeInput<TOptions>, PayKitSubscribeResult>;
-  customerPortal: PayKitMethod<PayKitCustomerPortalInput, { url: string }>;
-  upsertCustomer: PayKitMethod<PayKitCustomerInput, Customer>;
-  getCustomer: PayKitMethod<{ id: string }, CustomerWithDetails | null>;
-  deleteCustomer: PayKitMethod<{ id: string }, { success: true }>;
-  listCustomers: PayKitMethod<PayKitListCustomersInput | undefined, ListCustomersResult>;
-  check: PayKitMethod<PayKitCheckInput<TOptions>, CheckResult>;
-  report: PayKitMethod<PayKitReportInput<TOptions>, ReportResult>;
-  handleWebhook: PayKitMethod<PayKitWebhookInput, { received: true }>;
-}
+export type PayKitAPI<TOptions extends PayKitOptions = PayKitOptions> = GeneratePayKitAPI<TOptions>;
 
-export interface PayKitInstance<TOptions extends PayKitOptions = PayKitOptions>
-  extends PayKitAPI<TOptions>, PayKitClientApiCarrier<PayKitClientAPI<TOptions>> {
-  options: TOptions;
-  handler: (request: Request) => Promise<Response>;
-  $context: Promise<PayKitContext>;
-  $infer: {
-    planId: PlanIdFromOptions<TOptions>;
-    featureId: FeatureIdFromOptions<TOptions>;
+export type PayKitInstance<TOptions extends PayKitOptions = PayKitOptions> = PayKitAPI<TOptions> &
+  PayKitClientApiCarrier<PayKitClientAPI<TOptions>> & {
+    options: TOptions;
+    handler: (request: Request) => Promise<Response>;
+    $context: Promise<PayKitContext>;
+    $infer: {
+      planId: PlanIdFromOptions<TOptions>;
+      featureId: FeatureIdFromOptions<TOptions>;
+    };
   };
-}

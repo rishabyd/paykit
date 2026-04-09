@@ -1,4 +1,4 @@
 {
   "title": "Flows",
-  "pages": ["checkout", "payment-methods", "charges"]
+  "pages": ["subscription-billing", "metered-usage"]
 }

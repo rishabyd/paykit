@@ -1,0 +1,119 @@
+---
+title: Subscriptions
+description: Subscribe, upgrade, downgrade, and cancel plans with a single method.
+---
+
+`subscribe()` is the main lifecycle method in PayKit. It doesn't just start new subscriptions: it handles upgrades, downgrades, cancellations, and resumptions through the same unified call.
+
+<Tabs items={["Server", "Client"]}>
+  <Tab value="Server">
+    ```ts
+    const result = await paykit.subscribe({
+      customerId: "user_123",
+      planId: "pro",
+      successUrl: "https://myapp.com/billing/success",
+      cancelUrl: "https://myapp.com/billing",
+    });
+
+    if (result.paymentUrl) {
+      // Redirect user to provider checkout
+    }
+    ```
+  </Tab>
+  <Tab value="Client">
+    ```tsx
+    const { paymentUrl } = await paykitClient.subscribe({
+      planId: "pro",
+      successUrl: "/billing/success",
+      cancelUrl: "/billing",
+    });
+
+    if (paymentUrl) {
+      window.location.href = paymentUrl;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## New subscriptions
+
+What happens when you call `subscribe()` for the first time depends on the plan and whether the customer already has a payment method on file.
+
+- **Free plan:** activates immediately. No provider call is made, no subscription record is created. The customer is treated as on the default plan.
+- **Paid plan with a payment method:** PayKit creates the subscription directly through the provider.
+- **Paid plan without a payment method:** PayKit returns a `paymentUrl`. Redirect the user there to complete checkout. Once they do, the provider sends a webhook and PayKit activates the subscription.
+
+## Result shape
+
+`subscribe()` returns `{ paymentUrl, invoice, requiredAction }`.
+
+- `paymentUrl`: set when the customer needs to go through a checkout flow. Redirect them there.
+- `invoice`: present when a charge was created immediately.
+- `requiredAction`: set when additional authentication (like 3D Secure) is required.
+
+If `paymentUrl` is set, don't assume the subscription is active yet. It becomes active after the provider confirms payment via webhook.
+
+## Upgrades
+
+Moving to a higher-priced plan in the same group is an upgrade. PayKit switches the subscription immediately: the old plan ends and the new one starts. Any prorated amount is charged or credited depending on your provider settings.
+
+## Downgrades
+
+Moving to a lower-priced plan is a downgrade. PayKit doesn't switch immediately. The current plan stays active until the end of the billing period, and the target plan is stored as a scheduled change.
+
+When the period ends, PayKit processes the webhook from the provider and transitions the customer to the scheduled plan.
+
+## Cancel to free
+
+Downgrading from a paid plan to the default free plan follows the same pattern as a downgrade. The paid plan stays active until the period ends, then the customer moves to free automatically.
+
+<Callout type="info">
+  You don't need a separate `cancel()` method. Subscribing to the free plan is the cancellation path.
+</Callout>
+
+## Resume
+
+If a customer has a pending downgrade or cancellation, subscribing to their current active plan clears the scheduled change and resumes the subscription as normal.
+
+```ts
+// Customer is on "pro" with a pending downgrade to "free"
+await paykit.subscribe({ customerId: "user_123", planId: "pro" });
+// Scheduled downgrade is cleared. Customer stays on "pro".
+```
+
+## No-op
+
+If the customer is already on the target plan with no pending changes, `subscribe()` is a no-op. It returns the same result shape but takes no action.
+
+## Change scheduled target
+
+If a downgrade is already scheduled and you call `subscribe()` with a different lower-priced plan, the scheduled target is replaced. Only one downgrade can be pending at a time per group.
+
+```ts
+// Customer is on "ultra" with a pending downgrade to "free"
+await paykit.subscribe({ customerId: "user_123", planId: "pro" });
+// Scheduled target changes from "free" to "pro".
+```
+
+## Behavior summary
+
+| Scenario | Behavior |
+|---|---|
+| New subscription (free) | Activates immediately |
+| New subscription (paid, has payment method) | Creates subscription directly |
+| New subscription (paid, no payment method) | Returns `paymentUrl` for checkout |
+| Upgrade (higher price, same group) | Switches immediately |
+| Downgrade (lower price, same group) | Scheduled for period end |
+| Cancel to default free plan | Scheduled for period end |
+| Re-subscribe to current plan (pending cancel) | Resumes, clears cancellation |
+| Re-subscribe to current plan (no changes) | No-op |
+
+## Input fields
+
+| Field | Required | Description |
+|---|---|---|
+| `planId` | Yes | The target plan ID. Must be a valid plan from your config. |
+| `customerId` | Server only | The customer to subscribe. Not needed on the client (resolved from `identify`). |
+| `successUrl` | Recommended | Where to redirect after successful checkout. |
+| `cancelUrl` | Recommended | Where to redirect if the customer cancels checkout. |
+| `forceCheckout` | No | Forces a checkout flow even if the customer already has a payment method. |

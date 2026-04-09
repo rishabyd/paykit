@@ -106,6 +106,8 @@ export async function loadSubscribeContext(ctx: PayKitContext, input: SubscribeI
     );
   }
 
+  await warnOnDuplicateActiveSubscriptionGroups(ctx, input.customerId);
+
   const { providerCustomerId } = await upsertProviderCustomer(ctx, {
     customerId: input.customerId,
   });
@@ -577,6 +579,11 @@ export async function applySubscriptionWebhookAction(
       customerId: customerRow.id,
       group: storedProduct.group,
     });
+    const activeSubscriptions = await getActiveSubscriptionsInGroup(ctx.database, {
+      customerId: customerRow.id,
+      group: storedProduct.group,
+    });
+    const competingSubscriptions = activeSubscriptions.filter((sub) => sub.id !== targetSub.id);
 
     const subStatus = action.data.subscription.status;
     const isTerminal = subStatus === "canceled" || subStatus === "ended" || subStatus === "unpaid";
@@ -619,6 +626,23 @@ export async function applySubscriptionWebhookAction(
         subscriptionStatus: "active",
       });
     } else {
+      if (competingSubscriptions.length > 0) {
+        const effectiveDate =
+          action.data.subscription.currentPeriodStartAt ??
+          action.data.subscription.currentPeriodEndAt ??
+          new Date();
+
+        await endSubscriptions(
+          ctx.database,
+          competingSubscriptions.map((sub) => sub.id),
+          {
+            canceled: false,
+            endedAt: effectiveDate,
+            status: "ended",
+          },
+        );
+      }
+
       const activatedSubId = await activateScheduledSubscriptionForGroup(ctx, {
         customerId: customerRow.id,
         productGroup: storedProduct.group,
@@ -1138,6 +1162,53 @@ function addResetInterval(date: Date, resetInterval: string): Date {
 
 type ProviderProductMap = Record<string, { productId: string; priceId: string | null }>;
 
+export async function warnOnDuplicateActiveSubscriptionGroups(
+  ctx: PayKitContext,
+  customerId: string,
+): Promise<void> {
+  const activeSubscriptions = await ctx.database
+    .select({
+      group: product.group,
+      planId: product.id,
+      subscriptionId: subscription.id,
+    })
+    .from(subscription)
+    .innerJoin(product, eq(subscription.productInternalId, product.internalId))
+    .where(
+      and(
+        eq(subscription.customerId, customerId),
+        inArray(subscription.status, ["active", "trialing", "past_due"]),
+        or(isNull(subscription.endedAt), sql`${subscription.endedAt} > now()`),
+      ),
+    );
+
+  const subscriptionsByGroup = new Map<string, Array<{ planId: string; subscriptionId: string }>>();
+
+  for (const activeSubscription of activeSubscriptions) {
+    const currentGroup = subscriptionsByGroup.get(activeSubscription.group) ?? [];
+    currentGroup.push({
+      planId: activeSubscription.planId,
+      subscriptionId: activeSubscription.subscriptionId,
+    });
+    subscriptionsByGroup.set(activeSubscription.group, currentGroup);
+  }
+
+  for (const [group, subscriptionsInGroup] of subscriptionsByGroup) {
+    if (subscriptionsInGroup.length < 2) {
+      continue;
+    }
+
+    ctx.logger.warn(
+      {
+        customerId,
+        group,
+        subscriptions: subscriptionsInGroup,
+      },
+      "multiple active subscriptions detected in the same group",
+    );
+  }
+}
+
 function mapJoinRowToSubscriptionWithCatalog(row: {
   subscription: typeof subscription.$inferSelect;
   product: typeof product.$inferSelect;
@@ -1177,6 +1248,27 @@ export async function getActiveSubscriptionInGroup(
   const row = rows[0];
   if (!row) return null;
   return mapJoinRowToSubscriptionWithCatalog(row);
+}
+
+export async function getActiveSubscriptionsInGroup(
+  database: PayKitDatabase,
+  input: { customerId: string; group: string },
+): Promise<readonly SubscriptionWithCatalog[]> {
+  const rows = await database
+    .select()
+    .from(subscription)
+    .innerJoin(product, eq(subscription.productInternalId, product.internalId))
+    .where(
+      and(
+        eq(subscription.customerId, input.customerId),
+        eq(product.group, input.group),
+        inArray(subscription.status, ["active", "trialing", "past_due"]),
+        or(isNull(subscription.endedAt), sql`${subscription.endedAt} > now()`),
+      ),
+    )
+    .orderBy(desc(subscription.createdAt));
+
+  return rows.map(mapJoinRowToSubscriptionWithCatalog);
 }
 
 export async function getScheduledSubscriptionsInGroup(

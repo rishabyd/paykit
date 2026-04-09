@@ -8,6 +8,8 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import type { ComponentPropsWithoutRef } from "react";
 
+import { Features } from "@/components/docs/features";
+import { PackageInstall, PackageRun } from "@/components/docs/package-command";
 import { TocFooter } from "@/components/docs/toc-footer";
 import { source } from "@/lib/source";
 import { cn } from "@/lib/utils";
@@ -65,6 +67,9 @@ export default async function Page({ params }: DocsPageProps) {
             Steps,
             Tab,
             Tabs,
+            Features,
+            PackageInstall,
+            PackageRun,
           }}
         />
       </DocsBody>

@@ -7,7 +7,10 @@ import {
   createTestCustomerWithPM,
   createTestPayKit,
   dumpStateOnFailure,
+  expectExactMeteredBalance,
+  expectNoScheduledPlanInGroup,
   expectProduct,
+  expectSingleActivePlanInGroup,
   type TestPayKit,
   waitForWebhook,
 } from "../setup";
@@ -18,29 +21,28 @@ describe("cancel-end-of-cycle: pro → free + clock advance", () => {
 
   beforeAll(async () => {
     t = await createTestPayKit();
-    const customer = await createTestCustomerWithPM(t, {
-      id: "test_cancel_eoc",
-      email: "cancel-eoc@test.com",
-      name: "Cancel EOC Test",
+    const customer = await createTestCustomerWithPM({
+      t,
+      customer: {
+        id: "test_cancel_eoc",
+        email: "cancel-eoc@test.com",
+        name: "Cancel EOC Test",
+      },
     });
     customerId = customer.customerId;
 
     // Setup: subscribe to Pro, then schedule downgrade to Free
-    const b1 = new Date();
     await t.paykit.subscribe({
       customerId,
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
 
-    const b2 = new Date();
     await t.paykit.subscribe({
       customerId,
       planId: "free",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.database, "subscription.updated", { after: b2 });
   });
 
   afterAll(async () => {
@@ -60,9 +62,20 @@ describe("cancel-end-of-cycle: pro → free + clock advance", () => {
 
       // Advance clock 1 day past period end
       const advanceTo = new Date(periodEnd.getTime() + 86_400_000);
-      await advanceTestClock(t.stripeClient, t.testClockId, advanceTo.toISOString().split("T")[0]!);
+      const beforeAdvance = new Date();
+      await advanceTestClock({
+        t,
+        customerId,
+        frozenTime: advanceTo,
+      });
+      await waitForWebhook({
+        after: beforeAdvance,
+        database: t.database,
+        eventType: "subscription.deleted",
+        timeout: 30_000,
+      });
 
-      // Poll until Free is active (real subscription.deleted webhook)
+      // Poll until Free is active after the forwarded deletion event is processed
       for (let i = 0; i < 60; i++) {
         const rows = await t.database
           .select({ status: subscription.status })
@@ -81,12 +94,40 @@ describe("cancel-end-of-cycle: pro → free + clock advance", () => {
       }
 
       // Pro is canceled/ended
-      await expectProduct(t.database, customerId, "pro", { status: "canceled" });
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "pro",
+        expected: { status: "ended" },
+      });
 
       // Free is active with no period end (no billing cycle)
-      await expectProduct(t.database, customerId, "free", {
-        status: "active",
-        hasPeriodEnd: false,
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "free",
+        expected: {
+          status: "active",
+          hasPeriodEnd: false,
+        },
+      });
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "free",
+      });
+      await expectNoScheduledPlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+      });
+      await expectExactMeteredBalance({
+        paykit: t.paykit,
+        customerId,
+        featureId: "messages",
+        limit: 100,
+        remaining: 100,
       });
     } catch (error) {
       await dumpStateOnFailure(t.database, t.dbPath);

@@ -22,6 +22,7 @@ export async function getDefaultPaymentMethod(
       },
       where: and(
         eq(paymentMethod.customerId, input.customerId),
+        eq(paymentMethod.isDefault, true),
         eq(paymentMethod.providerId, input.providerId),
         isNull(paymentMethod.deletedAt),
       ),

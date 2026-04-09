@@ -1,5 +1,20 @@
 import type { NormalizedWebhookEvent } from "../types/events";
 
+export interface ProviderCustomer {
+  frozenTime?: string;
+  id: string;
+  testClockId?: string;
+}
+
+export type ProviderCustomerMap = Record<string, ProviderCustomer>;
+
+export interface ProviderTestClock {
+  frozenTime: Date;
+  id: string;
+  name?: string | null;
+  status: string;
+}
+
 export interface ProviderPaymentMethod {
   providerMethodId: string;
   type: string;
@@ -47,13 +62,18 @@ export interface ProviderSubscriptionResult {
 
 export interface StripeRuntime {
   upsertCustomer(data: {
+    createTestClock?: boolean;
     id: string;
     email?: string;
     name?: string;
     metadata?: Record<string, string>;
-  }): Promise<{ providerCustomerId: string }>;
+  }): Promise<{ providerCustomer: ProviderCustomer }>;
 
   deleteCustomer(data: { providerCustomerId: string }): Promise<void>;
+
+  getTestClock(data: { testClockId: string }): Promise<ProviderTestClock>;
+
+  advanceTestClock(data: { testClockId: string; frozenTime: Date }): Promise<ProviderTestClock>;
 
   attachPaymentMethod(data: {
     providerCustomerId: string;

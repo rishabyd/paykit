@@ -25,6 +25,7 @@ export const PAYKIT_ERROR_CODES = defineErrorCodes({
   PROVIDER_SUBSCRIPTION_MISSING_ITEMS: "Provider subscription did not include any items",
   PROVIDER_SUBSCRIPTION_MISSING_PERIOD: "Provider subscription did not include period end",
   PROVIDER_PRICE_REQUIRED: "A provider price ID is required",
+  PROVIDER_TEST_KEY_REQUIRED: "Testing mode requires a Stripe test secret key",
   PROVIDER_WEBHOOK_INVALID: "Provider webhook payload is invalid",
 
   IDENTIFY_REQUIRED: "identify must be configured to use HTTP API routes",
@@ -33,6 +34,8 @@ export const PAYKIT_ERROR_CODES = defineErrorCodes({
   SUCCESS_URL_REQUIRED:
     "A successUrl is required when subscribe is called without a request context",
   BASEPATH_INVALID: "basePath must start with a leading slash",
+  TESTING_NOT_ENABLED: "Testing mode is not enabled",
+  TEST_CLOCK_NOT_FOUND: "Customer does not have a test clock",
 });
 
 export type PayKitErrorCode = keyof typeof PAYKIT_ERROR_CODES;

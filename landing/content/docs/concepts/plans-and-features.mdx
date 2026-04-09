@@ -1,0 +1,149 @@
+---
+title: Plans & Features
+description: Define your billing model in code with typed plans, feature grants, and plan groups.
+---
+
+Plans are the core billing unit in PayKit. They define what customers subscribe to, and features define what those plans grant access to.
+
+## Defining features
+
+A feature is either a boolean access gate or a metered usage limit. You define it once and reuse it across plans.
+
+```ts title="plans.ts"
+import { feature, plan } from "paykitjs";
+
+// Boolean feature: grants access to something
+const proModels = feature({ id: "pro_models", type: "boolean" });
+
+// Metered feature: tracks usage with a limit
+const messages = feature({ id: "messages", type: "metered" });
+```
+
+Feature IDs must be lowercase alphanumeric with dashes or underscores, max 64 characters.
+
+**Feature types:**
+
+- `boolean`: the customer either has access or they don't. No usage tracking.
+- `metered`: tracks how much the customer has used against a limit, with a reset interval.
+
+## Including features in plans
+
+When you include a feature in a plan, you call it as a function.
+
+For **boolean features**, call with no arguments:
+
+```ts
+proModels()
+```
+
+For **metered features**, pass a `limit` and a `reset` interval:
+
+```ts
+messages({ limit: 100, reset: "month" })
+```
+
+The `reset` interval can be `day`, `week`, `month`, or `year`.
+
+## Defining plans
+
+Use `plan()` to define a plan. Every plan needs an `id`. Everything else is optional, but you'll almost always want `group`, `includes`, and either `default: true` or a `price`.
+
+```ts title="plans.ts"
+export const free = plan({
+  id: "free",
+  name: "Free",
+  group: "base",
+  default: true,
+  includes: [
+    messages({ limit: 100, reset: "month" }),
+  ],
+});
+
+export const pro = plan({
+  id: "pro",
+  name: "Pro",
+  group: "base",
+  price: { amount: 19, interval: "month" },
+  includes: [
+    messages({ limit: 2_000, reset: "month" }),
+    proModels(),
+  ],
+});
+
+export const ultra = plan({
+  id: "ultra",
+  name: "Ultra",
+  group: "base",
+  price: { amount: 49, interval: "month" },
+  includes: [
+    messages({ limit: 10_000, reset: "month" }),
+    proModels(),
+    prioritySupport(),
+  ],
+});
+```
+
+## Plan groups
+
+A group is a mutually exclusive set of plans. A customer can have one active plan per group at a time.
+
+Groups let you model common billing patterns:
+
+- A `base` group with free, pro, and ultra tiers
+- An `addons` group for one-off upgrades
+- A `seats` group for per-seat pricing
+
+Every plan that has `default: true` must belong to a group. Without a group, PayKit doesn't know which set of plans a customer is being placed into.
+
+## Default plans
+
+The default plan is the fallback for a group. It's typically your free tier.
+
+When a customer doesn't have an active subscription in a group, PayKit treats them as on the default plan. No subscription record is created until they explicitly subscribe.
+
+```ts
+export const free = plan({
+  id: "free",
+  group: "base",
+  default: true,
+  // ...
+});
+```
+
+<Callout type="info">
+  Only one plan per group can be `default: true`.
+</Callout>
+
+## Pricing
+
+Plans without a `price` are free. Paid plans take an `amount` in dollars and an `interval`.
+
+```ts
+price: { amount: 19, interval: "month" }
+```
+
+- `interval` can be `month` or `year`
+- `amount` is in dollars, max $999,999.99
+
+## Passing plans to PayKit
+
+Pass your plans array to `createPayKit`. You can import them directly or re-export them from a module object.
+
+```ts title="paykit.ts"
+import { free, pro, ultra } from "./plans";
+
+export const paykit = createPayKit({
+  // ...
+  plans: [free, pro, ultra],
+});
+
+// Plan and feature IDs are now type-safe:
+await paykit.subscribe({ customerId: "user_123", planId: "pro" }); // ✓
+await paykit.subscribe({ customerId: "user_123", planId: "typo" }); // ✗ type error
+```
+
+## Type inference
+
+PayKit infers plan IDs and feature IDs from your `plans` array. Typos are caught at compile time, so `planId: "proe"` or `featureId: "mesages"` won't compile.
+
+This also means your editor's autocomplete knows every valid plan and feature ID across the whole app.

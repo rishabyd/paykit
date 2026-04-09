@@ -1,44 +1,14 @@
 ---
 title: Introduction
-description: "Start with the PayKit MVP: server-side orchestration, provider-hosted flows, and local billing state."
+description: Introduction to PayKit.
 ---
 
-<Callout type="warn">
-  The package is still in development. Everything on this page reflects the planned MVP surface and
-  is written as mock documentation for the launch docs.
-</Callout>
+PayKit is an embedded billing framework for TypeScript apps. It provides a comprehensive set of features out of the box and includes a plugin ecosystem that simplifies adding advanced billing capabilities. Whether you need subscription management, usage-based billing, entitlement checks, or plan management across multiple providers, it lets you focus on building your product instead of wiring up payment provider APIs.
 
-PayKit is built for server-side payment orchestration. You call one API, providers still execute the
-payment work, and PayKit keeps the billing state your app depends on in Postgres.
+## Features
 
-## What you get
+PayKit aims to be a complete billing framework. It provides a wide range of features out of the box and allows you to extend it with plugins.
 
-- A unified API for customer sync, checkout, payment methods, and direct charges
-- Provider webhook verification and normalization
-- PayKit-owned billing tables for local reads
-- One event model for post-payment product logic
+<Features />
 
-## What the MVP does not try to solve
-
-- It is not a merchant of record
-- It is not a browser-first SDK
-- It is not a universal subscriptions platform
-- It does not replace provider checkout or vaulting
-
-## Recommended reading order
-
-1. [Install PayKit](/docs/get-started/installation)
-2. [Learn the basic usage flow](/docs/get-started/usage)
-3. [Read the database model](/docs/code/database)
-4. [Review the checkout API](/docs/features/checkout)
-
-## Mental model
-
-```txt
-App request -> PayKit API -> Provider adapter -> Provider
-Provider webhook -> PayKit verification -> Local sync -> Your event handler
-```
-
-Your application should treat PayKit as the billing-state layer above provider rails. That keeps
-provider-specific concepts out of business code while still letting providers do the work they are
-good at.
+...and more to come!

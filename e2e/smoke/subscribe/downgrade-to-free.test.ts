@@ -4,10 +4,11 @@ import {
   createTestCustomerWithPM,
   createTestPayKit,
   dumpStateOnFailure,
+  expectExactMeteredBalance,
   expectProduct,
-  expectSubscription,
+  expectSingleActivePlanInGroup,
+  expectSingleScheduledPlanInGroup,
   type TestPayKit,
-  waitForWebhook,
 } from "../setup";
 
 describe("downgrade-to-free: pro → free", () => {
@@ -16,21 +17,22 @@ describe("downgrade-to-free: pro → free", () => {
 
   beforeAll(async () => {
     t = await createTestPayKit();
-    const customer = await createTestCustomerWithPM(t, {
-      id: "test_downgrade_free",
-      email: "downgrade-free@test.com",
-      name: "Downgrade to Free Test",
+    const customer = await createTestCustomerWithPM({
+      t,
+      customer: {
+        id: "test_downgrade_free",
+        email: "downgrade-free@test.com",
+        name: "Downgrade to Free Test",
+      },
     });
     customerId = customer.customerId;
 
     // Setup: subscribe to Pro
-    const b1 = new Date();
     await t.paykit.subscribe({
       customerId,
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
   });
 
   afterAll(async () => {
@@ -39,27 +41,43 @@ describe("downgrade-to-free: pro → free", () => {
 
   it("downgrading to free schedules cancellation at period end", async () => {
     try {
-      const beforeDowngrade = new Date();
-
       await t.paykit.subscribe({
         customerId,
         planId: "free",
         successUrl: "https://example.com/success",
       });
 
-      await waitForWebhook(t.database, "subscription.updated", { after: beforeDowngrade });
-
       // Pro is still active but canceled
-      await expectProduct(t.database, customerId, "pro", {
-        status: "active",
-        canceled: true,
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "pro",
+        expected: {
+          status: "active",
+          canceled: true,
+        },
+      });
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "pro",
       });
 
       // Free is scheduled
-      await expectProduct(t.database, customerId, "free", { status: "scheduled" });
-
-      // Subscription is set to cancel at period end
-      await expectSubscription(t.database, customerId, { cancelAtPeriodEnd: true });
+      await expectSingleScheduledPlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "free",
+      });
+      await expectExactMeteredBalance({
+        paykit: t.paykit,
+        customerId,
+        featureId: "messages",
+        limit: 500,
+        remaining: 500,
+      });
     } catch (error) {
       await dumpStateOnFailure(t.database, t.dbPath);
       throw error;

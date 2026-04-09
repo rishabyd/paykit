@@ -1,0 +1,101 @@
+---
+title: Entitlements
+description: Check feature access and track metered usage against plan limits.
+---
+
+Entitlements represent what a customer can currently do based on their active plan. When a customer subscribes to a plan, PayKit derives their entitlements from the features that plan includes.
+
+## Checking access
+
+`check()` tells you whether a customer can use a feature right now.
+
+```ts
+const { allowed, balance } = await paykit.check({
+  customerId: "user_123",
+  featureId: "messages",
+});
+// allowed: true
+// balance: { limit: 2000, remaining: 1847, resetAt: "2026-05-01T00:00:00Z", unlimited: false }
+```
+
+## Boolean features
+
+For boolean features, `check()` returns `{ allowed: true }` if the feature is included in the customer's plan. There's no balance to track.
+
+```ts
+const { allowed } = await paykit.check({
+  customerId: "user_123",
+  featureId: "pro_models",
+});
+// allowed: true (no balance for boolean features)
+```
+
+If the customer's plan doesn't include the feature, `allowed` is `false`.
+
+## Metered features
+
+For metered features, `check()` returns a `balance` object alongside `allowed`.
+
+```ts
+balance: {
+  limit: 2000,       // total units for the period
+  remaining: 1847,   // units left
+  resetAt: "...",    // when the balance resets
+  unlimited: false,  // true if the plan grants unlimited usage
+}
+```
+
+`allowed` is `true` when `remaining > 0` (or when `unlimited` is `true`).
+
+## Reporting usage
+
+Call `report()` after a customer consumes a metered resource. It decrements the balance and returns the updated state.
+
+```ts
+const { success, balance } = await paykit.report({
+  customerId: "user_123",
+  featureId: "messages",
+  amount: 1,
+});
+```
+
+If the customer doesn't have sufficient balance, `success` is `false` and the balance isn't decremented.
+
+## Balance resets
+
+Metered balances reset lazily. PayKit doesn't run a scheduled job to reset balances at midnight. Instead, when a `check()` or `report()` happens after the reset time, PayKit detects the period has passed and resets the balance automatically.
+
+Reset intervals are set per feature grant in your plan definition: `day`, `week`, `month`, or `year`.
+
+<Callout type="info">
+  Lazy resets mean a customer who doesn't use the app won't have their balance reset until they do. The reset time is still calculated from the period boundary, not from when the reset was detected.
+</Callout>
+
+## Practical pattern
+
+Check before acting, then report after the action succeeds. Don't report if the action fails.
+
+```ts
+export async function POST(request: Request) {
+  const { allowed } = await paykit.check({
+    customerId: userId,
+    featureId: "messages",
+  });
+
+  if (!allowed) {
+    return Response.json({ error: "Usage limit reached" }, { status: 403 });
+  }
+
+  const response = await generateChatResponse(input);
+
+  await paykit.report({
+    customerId: userId,
+    featureId: "messages",
+    amount: 1,
+  });
+
+  return Response.json(response);
+}
+```
+
+This pattern ensures you don't charge usage for failed requests, and you don't serve responses to customers who've hit their limit.

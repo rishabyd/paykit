@@ -3,11 +3,17 @@ import { createFetch } from "@better-fetch/fetch";
 import type { clientMethods } from "../api/methods";
 import type { PayKitClientApiCarrier } from "../types/instance";
 
+type RequiresIdentify = {
+  options: { identify: (...args: never[]) => unknown };
+};
+
 export interface PayKitClientOptions {
   baseURL?: string;
 }
 
-export function createPayKitClient<Instance>(options?: PayKitClientOptions) {
+export function createPayKitClient<Instance extends RequiresIdentify>(
+  options?: PayKitClientOptions,
+) {
   const baseURL = options?.baseURL ?? "/paykit/api";
   const isCredentialsSupported =
     typeof globalThis.Request !== "undefined" && "credentials" in Request.prototype;
@@ -59,9 +65,9 @@ type UnionToIntersection<U> = (U extends unknown ? (k: U) => void : never) exten
   ? I
   : never;
 
-type InferBody<E> = E extends (ctx: infer C) => unknown ? C : never;
+type InferBody<E> = E extends (input: infer TInput) => Promise<unknown> ? TInput : never;
 
-type InferReturn<E> = E extends (...args: never[]) => Promise<infer R> ? R : never;
+type InferReturn<E> = E extends (input: infer _TInput) => Promise<infer TResult> ? TResult : never;
 
 type InferClientAPI<Instance> =
   Instance extends PayKitClientApiCarrier<infer API>

@@ -7,6 +7,7 @@ import {
   createTestPayKit,
   dumpStateOnFailure,
   expectProduct,
+  expectSingleActivePlanInGroup,
   type TestPayKit,
   waitForWebhook,
 } from "../setup";
@@ -18,21 +19,22 @@ describe("subscription-deleted: Stripe cancels subscription directly", () => {
 
   beforeAll(async () => {
     t = await createTestPayKit();
-    const customer = await createTestCustomerWithPM(t, {
-      id: "test_sub_deleted",
-      email: "sub-deleted@test.com",
-      name: "Subscription Deleted Test",
+    const customer = await createTestCustomerWithPM({
+      t,
+      customer: {
+        id: "test_sub_deleted",
+        email: "sub-deleted@test.com",
+        name: "Subscription Deleted Test",
+      },
     });
     customerId = customer.customerId;
 
     // Setup: subscribe to Pro
-    const b1 = new Date();
     await t.paykit.subscribe({
       customerId,
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
 
     // Get provider subscription ID from provider_data JSONB
     const subRows = await t.database
@@ -55,20 +57,36 @@ describe("subscription-deleted: Stripe cancels subscription directly", () => {
 
       // Cancel directly via Stripe API (simulates Stripe dashboard cancellation)
       await t.stripeClient.subscriptions.cancel(providerSubscriptionId);
-
-      // Wait for the real subscription.deleted webhook
-      await waitForWebhook(t.database, "subscription.deleted", {
+      await waitForWebhook({
         after: beforeCancel,
+        database: t.database,
+        eventType: "subscription.deleted",
         timeout: 30_000,
       });
 
       // Pro should be canceled/ended
-      await expectProduct(t.database, customerId, "pro", { status: "canceled" });
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "pro",
+        expected: { status: "ended" },
+      });
 
       // Free should be active (default plan activated)
-      await expectProduct(t.database, customerId, "free", {
-        status: "active",
-        hasPeriodEnd: false,
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "free",
+        expected: {
+          status: "active",
+          hasPeriodEnd: false,
+        },
+      });
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "free",
       });
     } catch (error) {
       await dumpStateOnFailure(t.database, t.dbPath);

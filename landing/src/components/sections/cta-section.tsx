@@ -3,14 +3,13 @@
 import { track } from "@vercel/analytics";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronRight, Copy } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useState } from "react";
 
-import { useComingSoon } from "@/components/coming-soon-dialog";
 import { Section, SectionContent } from "@/components/layout/section";
 import { Button } from "@/components/ui/button";
 
 export function CTASection() {
-  const showComingSoon = useComingSoon();
   const [copied, setCopied] = useState(false);
   const [hovered, setHovered] = useState(false);
 
@@ -34,12 +33,11 @@ export function CTASection() {
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <Button
+              render={<Link href="/docs" />}
+              nativeButton={false}
               size="lg"
               className="px-4"
-              onClick={() => {
-                track("cta_clicked", { button: "get_started", page: "cta_section" });
-                showComingSoon();
-              }}
+              onClick={() => track("cta_clicked", { button: "get_started", page: "cta_section" })}
             >
               Get Started
             </Button>

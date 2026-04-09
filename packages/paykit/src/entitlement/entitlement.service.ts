@@ -46,6 +46,16 @@ function addResetInterval(date: Date, resetInterval: string): Date {
   return next;
 }
 
+function getNextResetAt(currentResetAt: Date, now: Date, resetInterval: string): Date {
+  let nextResetAt = new Date(currentResetAt);
+
+  while (nextResetAt <= now) {
+    nextResetAt = addResetInterval(nextResetAt, resetInterval);
+  }
+
+  return nextResetAt;
+}
+
 function aggregateBalance(rows: ActiveEntitlementRow[]): EntitlementBalance | null {
   if (rows.length === 0) return null;
 
@@ -109,8 +119,8 @@ async function getActiveEntitlements(
 async function resetStaleEntitlements(
   db: PayKitDatabase,
   rows: ActiveEntitlementRow[],
+  now: Date,
 ): Promise<ActiveEntitlementRow[]> {
-  const now = new Date();
   let changed = false;
 
   for (const row of rows) {
@@ -120,7 +130,7 @@ async function resetStaleEntitlements(
       row.resetInterval &&
       row.originalLimit != null
     ) {
-      const nextReset = addResetInterval(now, row.resetInterval);
+      const nextReset = getNextResetAt(row.nextResetAt, now, row.resetInterval);
       await db
         .update(entitlement)
         .set({
@@ -144,12 +154,12 @@ async function resetStaleEntitlements(
 
 export async function checkEntitlement(
   database: PayKitDatabase,
-  input: { customerId: string; featureId: string; required?: number },
+  input: { customerId: string; featureId: string; now?: Date; required?: number },
 ): Promise<CheckResult> {
   const required = input.required ?? 1;
 
   const rows = await getActiveEntitlements(database, input.customerId, input.featureId);
-  await resetStaleEntitlements(database, rows);
+  await resetStaleEntitlements(database, rows, input.now ?? new Date());
 
   const balance = aggregateBalance(rows);
 
@@ -168,12 +178,12 @@ export async function checkEntitlement(
 
 export async function reportEntitlement(
   database: PayKitDatabase,
-  input: { amount?: number; customerId: string; featureId: string },
+  input: { amount?: number; customerId: string; featureId: string; now?: Date },
 ): Promise<ReportResult> {
   const amount = input.amount ?? 1;
 
   const rows = await getActiveEntitlements(database, input.customerId, input.featureId);
-  await resetStaleEntitlements(database, rows);
+  await resetStaleEntitlements(database, rows, input.now ?? new Date());
 
   if (rows.length === 0) {
     return { balance: null, success: false };

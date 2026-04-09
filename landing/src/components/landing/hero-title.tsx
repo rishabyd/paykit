@@ -3,13 +3,12 @@
 import { track } from "@vercel/analytics";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronRight, Copy, Sparkle } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useState } from "react";
 
-import { useComingSoon } from "../coming-soon-dialog";
 import { Button } from "../ui/button";
 
 export function HeroTitle() {
-  const showComingSoon = useComingSoon();
   const [copied, setCopied] = useState(false);
   const [hovered, setHovered] = useState(false);
 
@@ -44,13 +43,12 @@ export function HeroTitle() {
 
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3 sm:mt-8 sm:gap-4 lg:mt-12 lg:justify-start">
           <Button
+            render={<Link href="/docs" />}
+            nativeButton={false}
             size="lg"
             className="px-4 h-9.5"
             variant="default"
-            onClick={() => {
-              track("cta_clicked", { button: "read_docs", page: "home" });
-              showComingSoon();
-            }}
+            onClick={() => track("cta_clicked", { button: "read_docs", page: "home" })}
           >
             Read Docs
           </Button>

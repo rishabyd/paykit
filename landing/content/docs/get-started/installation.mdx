@@ -1,134 +1,227 @@
 ---
 title: Installation
-description: Install PayKit, create a server instance, configure env vars, and mount your first webhook handler.
+description: Install PayKit, configure your billing instance, and mount the route handler in your app.
 ---
-
-<Callout type="warn">
-  This page describes the planned MVP setup. Some package names and helpers may still change before
-  v1.
-</Callout>
 
 <Steps>
 
 <Step>
-## Install PayKit
+## Install the package
 
-<Tabs items={["pnpm", "npm", "bun"]}>
-  <Tab value="pnpm">
-    ```bash
-    pnpm add paykitjs @paykitjs/stripe
-    ```
+Let's start by adding PayKit to your project:
 
-  </Tab>
-  <Tab value="npm">
-    ```bash
-    npm install paykitjs @paykitjs/stripe
-    ```
 
-  </Tab>
-  <Tab value="bun">
-    ```bash
-    bun add paykitjs @paykitjs/stripe
-    ```
 
-  </Tab>
-</Tabs>
+<PackageInstall package="paykitjs" />
 
-This is an example using Stripe, but you can install the [providers](/docs/providers) you need.
+<Callout type="info">
+  If you're using a separate client and server setup, make sure to install
+  the package in both apps.
+</Callout>
 
 </Step>
 
 <Step>
-## Configure PayKit
+## Create the PayKit instance
+
+Create a file named `paykit.ts` anywhere in your app. 
+
+Usually you would put it somewhere in `src/`, `src/lib/`.
+
+Import `createPayKit` and export your paykit instance. This is the main server entry point
+for all billing.
 
 ```ts title="paykit.ts"
 import { createPayKit } from "paykitjs";
+
+export const paykit = createPayKit({
+  // ...
+});
+```
+
+</Step>
+
+<Step>
+## Configure provider
+
+PayKit can operate with different payment providers. Here's an example with Stripe, but you can easily configure another one, like Polar, Creem, and custom!
+
+Install the provider adapter and plug it into your instance.
+
+<PackageInstall package="@paykitjs/stripe" />
+
+```ts title="paykit.ts"
 import { stripe } from "@paykitjs/stripe";
+
+export const paykit = createPayKit({
+  // ...
+  provider: stripe({ // [!code highlight]
+    secretKey: process.env.STRIPE_SECRET_KEY!, // [!code highlight]
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET!,// [!code highlight]
+  }),// [!code highlight]
+});
+```
+
+</Step>
+
+<Step>
+## Configure database
+
+PayKit needs a database to store billing state, such as subscriptions. You can create a separate database, or simply plug it into the app's own db.
+
+Pass a connection string directly, or `pg.Pool`.
+
+```ts title="paykit.ts"
 import { Pool } from "pg";
 
 export const paykit = createPayKit({
-  database: new Pool({
-    connectionString: process.env.DATABASE_URL!,
-  }),
-  providers: [
-    stripe({
-      secretKey: process.env.STRIPE_SECRET_KEY!,
-      webhookSecret: process.env.STRIPE_WEBHOOK_SECRET!,
-    }),
-  ],
-  on: {
-    "payment.succeeded": async ({ payment }) => {
-      console.log("Payment received", payment);
-    },
+  // ...
+  database: new Pool({// [!code highlight]
+    connectionString: process.env.DATABASE_URL!,// [!code highlight]
+  }),// [!code highlight]
+});
+```
+
+<Callout type="info">
+  It works by creating a few tables prefixed with `paykit_`. You can learn more [here](/docs/concepts/database).
+</Callout>
+
+</Step>
+
+<Step>
+## Mount request handler
+
+To handle webhooks and client API requests, you need to set up a request handler on your server.
+
+Create a new file or route in your framework's designated catch-all route handler. This route should handle requests for the path /paykit/* (unless you've configured a different base path).
+
+<Tabs items={["Next.js", "Other"]}>
+  <Tab value="Next.js">
+    ```ts title="src/app/paykit/[[...slug]]/route.ts"
+    import { paykitHandler } from "paykitjs/handlers/next";
+    import { paykit } from "@/lib/paykit";
+
+    export const { GET, POST } = paykitHandler(paykit);
+    ```
+  </Tab>
+  <Tab value="Other">
+    The core handler is a standard Web API function that takes a `Request` and
+    returns a `Response`. You can use it with any framework that supports the
+    Web API standard.
+
+    ```ts title="server.ts"
+    import { paykit } from "./paykit";
+
+    // paykit.handler: (request: Request) => Promise<Response>
+    // Mount it on any path that catches /paykit/*
+    app.all("/paykit/*", (req) => paykit.handler(req));
+    ```
+  </Tab>
+</Tabs>
+
+</Step>
+
+<Step>
+## Create client instance
+
+The client-side library helps you interact with the server. PayKit client sdk suitable for almost all modern frameworks, including React.
+
+```ts title="src/lib/paykit-client.ts"
+import { createPayKitClient } from "paykitjs/client";
+import type { paykit } from "@/server/paykit";
+
+export const paykitClient = createPayKitClient<typeof paykit>();
+```
+
+To use client we also need to authenticate incoming requests on the server, to do this, add the `identify` option to your server instance.
+
+```ts title="paykit.ts"
+export const paykit = createPayKit({
+  // ...
+  identify: async ({ headers }) => {
+    const session = await auth.api.getSession({ headers });
+    if (!session) return null;
+    return {
+      customerId: session.user.id,
+      email: session.user.email,
+      name: session.user.name,
+      // Just pass user's data, and Stripe customer gets synced automatically!
+    };
   },
 });
 ```
 
-PayKit CLI discovers `paykit.ts` by default, so keep your exported instance in that file.
-
 </Step>
 
 <Step>
-## Configure environment variables
+## Define your products
 
-```bash title=".env"
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/paykit
+Optionally. PayKit provides a code-first way to create your plans, and a very useful usage billing with `track()` and `report()` out of the box. 
 
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+By defining you products in code don't have to touch Stripe's dashboard at all. It automatically syncs your pricing with your provider, and you unlock a full type-safety with inferred ID types!
+
+
+```ts title="plans.ts"
+import { feature, plan } from "paykitjs";
+
+const messages = feature({ id: "messages", type: "metered" });
+const proModels = feature({ id: "pro_models", type: "boolean" });
+
+export const free = plan({
+  id: "free",
+  name: "Free",
+  group: "base",
+  default: true,
+  includes: [
+    messages({ limit: 100, reset: "month" })
+  ],
+});
+
+export const pro = plan({
+  id: "pro",
+  name: "Pro",
+  group: "base",
+  price: { amount: 19, interval: "month" },
+  includes: [
+    messages({ limit: 2000, reset: "month" }), 
+    proModels()
+  ],
+});
 ```
 
-Set the database URL and provider credentials used by your PayKit instance.
+Then pass your plans to the main options:
 
-</Step>
+```ts title="paykit.ts"
+import { free, pro } from "./plans";
 
-<Step>
-## Run PayKit migrations
-
-```bash
-npx paykitjs migrate
+export const paykit = createPayKit({
+  // ...
+  plans: [free, pro],
+});
 ```
 
-This applies PayKit's packaged SQL migrations and creates the `paykit_*` tables plus the
-`paykit_migrations` journal. PayKit does not create tables at runtime.
+
+<Callout type="info">
+  This is an example setup for AI chat app. Read further on how to build your own billing config.
+</Callout>
 
 </Step>
 
 <Step>
-## Add the webhook route
+## Push changes to DB
 
-```ts title="src/app/api/paykit/webhooks/[providerId]/route.ts"
-import { paykitHandler } from "paykitjs/handlers/next";
+PayKit includes a CLI tool to keep your database in sync with your configuration.
 
-import { paykit } from "@/lib/paykit";
+<PackageRun command="paykitjs push" />
 
-export const { GET, POST } = paykitHandler(paykit);
-```
-
-PayKit uses the provider ID in the route to select the adapter and verify the webhook signature.
-
-</Step>
-
-<Step>
-## Set up storage
-
-PayKit's MVP stores billing state in Postgres using PayKit-owned tables such as:
-
-- `paykit_customer`
-- `paykit_provider_customer`
-- `paykit_payment_method`
-- `paykit_payment`
-- `paykit_migrations`
-
-The migration flow is first-party and explicit: update your PayKit version, run `paykitjs migrate`,
-then start your app.
+<Callout>
+  This applies database migrations and syncs your plan definitions to provider's
+  products. 
+<br/>Run it once on setup, and every time after you change your products configuration.
+</Callout>
 
 </Step>
+
+ __You're now ready to use PayKit in your app!__ 🚀
 
 </Steps>
-
-## Next steps
-
-- [Read the basic usage flow](/docs/get-started/usage)
-- [Understand the local database model](/docs/code/database)
-- [Set up a framework handler](/docs/code/framework-setups/nextjs)

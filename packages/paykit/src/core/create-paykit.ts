@@ -43,7 +43,7 @@ export function createPayKit<const TOptions extends PayKitOptions>(
     return contextPromise;
   };
 
-  const api = getApi<TOptions>(getContext) as PayKitAPI<TOptions>;
+  const api = getApi(getContext(), options) as unknown as PayKitAPI<TOptions>;
   const paykit: PayKitInstance<TOptions> = {
     options,
 

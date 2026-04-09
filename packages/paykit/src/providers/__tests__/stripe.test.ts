@@ -1,0 +1,137 @@
+import { describe, expect, it, vi } from "vitest";
+
+import { PAYKIT_ERROR_CODES } from "../../core/errors";
+import { createStripeProvider } from "../stripe";
+
+describe("providers/stripe", () => {
+  it("creates a test clock and stores its id on the provider customer", async () => {
+    const createClock = vi.fn().mockResolvedValue({
+      frozen_time: 1_700_000_000,
+      id: "clock_123",
+      name: "customer_123",
+      status: "ready",
+    });
+    const createCustomer = vi.fn().mockResolvedValue({ id: "cus_123" });
+    const runtime = createStripeProvider(
+      {
+        customers: { create: createCustomer },
+        testHelpers: {
+          testClocks: {
+            advance: vi.fn(),
+            create: createClock,
+            retrieve: vi.fn(),
+          },
+        },
+      } as never,
+      {
+        id: "stripe",
+        kind: "stripe",
+        secretKey: "sk_test_123",
+        webhookSecret: "whsec_123",
+      },
+    );
+
+    const result = await runtime.upsertCustomer({
+      createTestClock: true,
+      email: "test@example.com",
+      id: "customer_123",
+      metadata: { role: "tester" },
+      name: "Tester",
+    });
+
+    expect(createClock).toHaveBeenCalledWith({
+      frozen_time: expect.any(Number),
+      name: "customer_123",
+    });
+    expect(createCustomer).toHaveBeenCalledWith({
+      email: "test@example.com",
+      metadata: {
+        customerId: "customer_123",
+        role: "tester",
+      },
+      name: "Tester",
+      test_clock: "clock_123",
+    });
+    expect(result).toEqual({
+      providerCustomer: {
+        frozenTime: expect.any(String),
+        id: "cus_123",
+        testClockId: "clock_123",
+      },
+    });
+  });
+
+  it("throws a clear error when testing mode uses a live Stripe key", async () => {
+    const runtime = createStripeProvider(
+      {
+        customers: { create: vi.fn() },
+        testHelpers: {
+          testClocks: {
+            advance: vi.fn(),
+            create: vi.fn(),
+            retrieve: vi.fn(),
+          },
+        },
+      } as never,
+      {
+        id: "stripe",
+        kind: "stripe",
+        secretKey: "sk_live_123",
+        webhookSecret: "whsec_123",
+      },
+    );
+
+    await expect(
+      runtime.upsertCustomer({
+        createTestClock: true,
+        id: "customer_123",
+      }),
+    ).rejects.toMatchObject({
+      code: PAYKIT_ERROR_CODES.PROVIDER_TEST_KEY_REQUIRED.code,
+    });
+  });
+
+  it("advances a test clock and returns its normalized state", async () => {
+    const advanceClock = vi.fn().mockResolvedValue(undefined);
+    const retrieveClock = vi.fn().mockResolvedValue({
+      frozen_time: 1_700_086_400,
+      id: "clock_123",
+      name: "customer_123",
+      status: "ready",
+    });
+    const runtime = createStripeProvider(
+      {
+        customers: { create: vi.fn() },
+        testHelpers: {
+          testClocks: {
+            advance: advanceClock,
+            create: vi.fn(),
+            retrieve: retrieveClock,
+          },
+        },
+      } as never,
+      {
+        id: "stripe",
+        kind: "stripe",
+        secretKey: "sk_test_123",
+        webhookSecret: "whsec_123",
+      },
+    );
+    const frozenTime = new Date("2024-01-02T00:00:00.000Z");
+
+    const result = await runtime.advanceTestClock({
+      frozenTime,
+      testClockId: "clock_123",
+    });
+
+    expect(advanceClock).toHaveBeenCalledWith("clock_123", {
+      frozen_time: Math.floor(frozenTime.getTime() / 1000),
+    });
+    expect(result).toEqual({
+      frozenTime: new Date(1_700_086_400 * 1000),
+      id: "clock_123",
+      name: "customer_123",
+      status: "ready",
+    });
+  });
+});

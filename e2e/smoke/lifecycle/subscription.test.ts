@@ -12,6 +12,10 @@ import {
   createTestCustomer,
   createTestPayKit,
   dumpStateOnFailure,
+  expectExactMeteredBalance,
+  expectNoScheduledPlanInGroup,
+  expectSingleActivePlanInGroup,
+  expectSingleScheduledPlanInGroup,
   type TestPayKit,
   waitForWebhook,
 } from "../setup";
@@ -22,10 +26,13 @@ describe("subscription lifecycle", () => {
 
   beforeAll(async () => {
     t = await createTestPayKit();
-    const customer = await createTestCustomer(t, {
-      id: "test_user_1",
-      email: "smoke@test.com",
-      name: "Smoke Test User",
+    const customer = await createTestCustomer({
+      t,
+      customer: {
+        id: "test_user_1",
+        email: "smoke@test.com",
+        name: "Smoke Test User",
+      },
     });
     customerId = customer.customerId;
   });
@@ -110,6 +117,24 @@ describe("subscription lifecycle", () => {
       expect(freeProduct).toBeDefined();
       expect(freeProduct!.status).toBe("active");
       expect(freeProduct!.current_period_end_at).toBeNull();
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "free",
+      });
+      await expectNoScheduledPlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+      });
+      await expectExactMeteredBalance({
+        customerId,
+        featureId: "messages",
+        limit: 100,
+        paykit: t.paykit,
+        remaining: 100,
+      });
     });
 
     // ─── Step 2: Subscribe to Pro (via checkout) ───
@@ -127,7 +152,11 @@ describe("subscription lifecycle", () => {
       console.log("\n\n  ▶ Complete checkout at:\n  " + result.paymentUrl + "\n");
 
       // Wait for checkout.completed webhook after manual completion
-      await waitForWebhook(t.database, "checkout.completed", { timeout: 120_000 });
+      await waitForWebhook({
+        database: t.database,
+        eventType: "checkout.completed",
+        timeout: 120_000,
+      });
 
       const products = await getCustomerProducts();
       const pro = products.find((p) => p.plan_id === "pro" && p.status === "active");
@@ -136,6 +165,24 @@ describe("subscription lifecycle", () => {
       expect(pro).toBeDefined();
       expect(pro!.current_period_end_at).not.toBeNull();
       expect(free).toBeDefined();
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "pro",
+      });
+      await expectNoScheduledPlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+      });
+      await expectExactMeteredBalance({
+        customerId,
+        featureId: "messages",
+        limit: 500,
+        paykit: t.paykit,
+        remaining: 500,
+      });
 
       const invoices = await getInvoiceCount();
       expect(invoices).toBeGreaterThanOrEqual(1);
@@ -161,19 +208,28 @@ describe("subscription lifecycle", () => {
       expect(ultra).toBeDefined();
       expect(ultra!.current_period_end_at).not.toBeNull();
       expect(pro).toBeDefined();
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "ultra",
+      });
+      await expectExactMeteredBalance({
+        customerId,
+        featureId: "messages",
+        limit: 10_000,
+        paykit: t.paykit,
+        remaining: 10_000,
+      });
     });
 
     // ─── Step 4: Downgrade Ultra → Pro (scheduled) ───
     await step("downgrade ultra → pro (scheduled)", async () => {
-      const beforeDowngrade = new Date();
-
       await t.paykit.subscribe({
         customerId,
         planId: "pro",
         successUrl: "https://example.com/success",
       });
-
-      await waitForWebhook(t.database, "subscription.updated", { after: beforeDowngrade });
 
       const products = await getCustomerProducts();
       const ultra = products.find((p) => p.plan_id === "ultra" && p.status === "active");
@@ -182,6 +238,18 @@ describe("subscription lifecycle", () => {
       expect(ultra).toBeDefined();
       expect(ultra!.canceled).toBe(true);
       expect(scheduledPro).toBeDefined();
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "ultra",
+      });
+      await expectSingleScheduledPlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "pro",
+      });
     });
 
     // ─── Step 5: Resume Ultra (cancel the downgrade to Pro) ───
@@ -199,19 +267,26 @@ describe("subscription lifecycle", () => {
       expect(ultra).toBeDefined();
       expect(ultra!.canceled).toBe(false);
       expect(scheduledPro).toBeUndefined();
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "ultra",
+      });
+      await expectNoScheduledPlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+      });
     });
 
     // ─── Step 6: Downgrade Ultra → Free + advance clock ───
     await step("downgrade ultra → free + advance clock", async () => {
-      const beforeDowngrade = new Date();
-
       await t.paykit.subscribe({
         customerId,
         planId: "free",
         successUrl: "https://example.com/success",
       });
-
-      await waitForWebhook(t.database, "subscription.updated", { after: beforeDowngrade });
 
       const products = await getCustomerProducts();
       const ultra = products.find((p) => p.plan_id === "ultra" && p.status === "active");
@@ -226,7 +301,11 @@ describe("subscription lifecycle", () => {
       expect(sub).toBeDefined();
       const periodEnd = new Date(sub!.currentPeriodEndAt as unknown as string);
       const advanceTo = new Date(periodEnd.getTime() + 86_400_000);
-      await advanceTestClock(t.stripeClient, t.testClockId, advanceTo.toISOString().split("T")[0]!);
+      await advanceTestClock({
+        t,
+        customerId,
+        frozenTime: advanceTo,
+      });
 
       // Poll DB until Free is active (real webhooks handle the transition)
       let activeFree: Awaited<ReturnType<typeof getCustomerProducts>>[0] | undefined;
@@ -244,6 +323,24 @@ describe("subscription lifecycle", () => {
       expect(canceledUltra).toBeDefined();
       expect(activeFree).toBeDefined();
       expect(activeFree!.current_period_end_at).toBeNull();
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "free",
+      });
+      await expectNoScheduledPlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+      });
+      await expectExactMeteredBalance({
+        customerId,
+        featureId: "messages",
+        limit: 100,
+        paykit: t.paykit,
+        remaining: 100,
+      });
     });
 
     // ─── Step 7: Upgrade Free → Pro (checkout again) ───
@@ -266,7 +363,9 @@ describe("subscription lifecycle", () => {
       // Customer must go through checkout again.
       expect(result.paymentUrl).not.toBeNull();
       console.log("\n\n  ▶ Complete checkout at:\n  " + result.paymentUrl + "\n");
-      await waitForWebhook(t.database, "checkout.completed", {
+      await waitForWebhook({
+        database: t.database,
+        eventType: "checkout.completed",
         after: beforeCheckout,
         timeout: 120_000,
       });
@@ -276,6 +375,19 @@ describe("subscription lifecycle", () => {
 
       expect(activePro).toBeDefined();
       expect(activePro!.current_period_end_at).not.toBeNull();
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "pro",
+      });
+      await expectExactMeteredBalance({
+        customerId,
+        featureId: "messages",
+        limit: 500,
+        paykit: t.paykit,
+        remaining: 500,
+      });
     });
 
     // ─── Step 8: Renewal ───
@@ -288,7 +400,11 @@ describe("subscription lifecycle", () => {
       // Advance clock past period end — Stripe renews the subscription
       // and fires webhooks through stripe listen
       const advanceTo = new Date(periodEnd.getTime() + 86_400_000);
-      await advanceTestClock(t.stripeClient, t.testClockId, advanceTo.toISOString().split("T")[0]!);
+      await advanceTestClock({
+        t,
+        customerId,
+        frozenTime: advanceTo,
+      });
 
       // Poll DB until period dates roll forward (real webhooks update them)
       let newPeriodEnd = periodEnd;
@@ -305,6 +421,13 @@ describe("subscription lifecycle", () => {
       }
 
       expect(newPeriodEnd.getTime()).toBeGreaterThan(periodEnd.getTime());
+      await expectExactMeteredBalance({
+        customerId,
+        featureId: "messages",
+        limit: 500,
+        paykit: t.paykit,
+        remaining: 500,
+      });
     });
   });
 });

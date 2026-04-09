@@ -10,6 +10,8 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
+import type { ProviderCustomerMap } from "../providers/provider";
+
 const pgTable = pgTableCreator((name) => `paykit_${name}`);
 
 const createdAt = timestamp("created_at")
@@ -19,8 +21,6 @@ const updatedAt = timestamp("updated_at")
   .notNull()
   .$defaultFn(() => new Date())
   .$onUpdateFn(() => new Date());
-
-type ProviderCustomerMap = Record<string, { id: string }>;
 
 export const customer = pgTable(
   "customer",

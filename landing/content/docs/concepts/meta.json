@@ -1,11 +1,16 @@
 {
   "title": "Concepts",
   "pages": [
-    "server-api",
-    "react-client",
+    "plans-and-features",
+    "customers",
+    "subscriptions",
+    "entitlements",
     "webhook-events",
     "database",
-    "typescript",
-    "payment-providers"
+    "payment-providers",
+    "plugins",
+    "client",
+    "cli",
+    "typescript"
   ]
 }

@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { stripe } from "@paykitjs/stripe";
 import { config } from "dotenv";
-import { and, count, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { createPayKit, feature, plan } from "paykitjs";
 import { Pool } from "pg";
 import { default as Stripe } from "stripe";
@@ -66,16 +66,42 @@ export const ultraPlan = plan({
   price: { amount: 200, interval: "month" },
 });
 
+type SmokePlans = {
+  free: typeof freePlan;
+  pro: typeof proPlan;
+  premium: typeof premiumPlan;
+  ultra: typeof ultraPlan;
+};
+
+type SmokePayKit = ReturnType<
+  typeof createPayKit<{
+    database: Pool;
+    plans: SmokePlans;
+    provider: ReturnType<typeof stripe>;
+    testing: { enabled: true };
+  }>
+>;
+
 export interface TestPayKit {
-  paykit: ReturnType<typeof createPayKit>;
+  paykit: SmokePayKit;
   database: PayKitDatabase;
   ctx: PayKitContext;
   stripeClient: Stripe;
-  testClockId: string;
   dbPath: string;
   server: Server;
+  webhookRequests: CapturedWebhookRequest[];
   cleanup: () => Promise<void>;
 }
+
+export interface CapturedWebhookRequest {
+  body: string;
+  headers: Record<string, string>;
+  path: string;
+  receivedAt: Date;
+}
+
+const activeSubscriptionStatuses = ["active", "trialing", "past_due"] as const;
+const presentSubscriptionStatuses = [...activeSubscriptionStatuses, "scheduled"] as const;
 
 // createTestPayKit
 
@@ -105,32 +131,16 @@ export async function createTestPayKit(): Promise<TestPayKit> {
   // 2. Run migrations
   await migrateDatabase(pool);
 
-  // 3. Create test clock
-  const clock = await stripeClient.testHelpers.testClocks.create({
-    frozen_time: Math.floor(Date.now() / 1000),
-    name: `smoke-${String(Date.now())}`,
-  });
-
-  // 4. Create PayKit instance with real Stripe
+  // 3. Create PayKit instance with real Stripe
   const stripeProvider = stripe({ secretKey, webhookSecret });
   const paykit = createPayKit({
     database: pool,
     plans: { free: freePlan, pro: proPlan, premium: premiumPlan, ultra: ultraPlan },
     provider: stripeProvider,
+    testing: { enabled: true },
   });
 
   const ctx = await paykit.$context;
-
-  // Override upsertCustomer to attach test clock
-  ctx.stripe.upsertCustomer = async (data) => {
-    const customer = await stripeClient.customers.create({
-      email: data.email,
-      metadata: { customerId: data.id, ...data.metadata },
-      name: data.name,
-      test_clock: clock.id,
-    });
-    return { providerCustomerId: customer.id };
-  };
 
   // Override createSubscription to use allow_incomplete. The default
   // payment_behavior: "default_incomplete" requires client-side payment
@@ -180,11 +190,12 @@ export async function createTestPayKit(): Promise<TestPayKit> {
     };
   };
 
-  // 5. Start webhook server BEFORE syncing products — product sync
+  // 4. Start webhook server BEFORE syncing products — product sync
   // creates Stripe products which fires webhooks immediately
-  const server = startWebhookServer(paykit);
+  const webhookRequests: CapturedWebhookRequest[] = [];
+  const server = startWebhookServer(paykit, webhookRequests);
 
-  // 6. Sync products to Stripe
+  // 5. Sync products to Stripe
   await syncProducts(ctx);
 
   return {
@@ -192,12 +203,27 @@ export async function createTestPayKit(): Promise<TestPayKit> {
     database: ctx.database,
     ctx,
     stripeClient,
-    testClockId: clock.id,
     dbPath: dbUrl,
     server,
+    webhookRequests,
     cleanup: async () => {
-      // Delete test clock first — Stripe fires cleanup webhooks
-      await stripeClient.testHelpers.testClocks.del(clock.id).catch(() => {});
+      const customerRows = await ctx.database.query.customer.findMany();
+      const testClockIds = new Set<string>();
+      for (const row of customerRows) {
+        const providerMap = (row.provider ?? {}) as Record<
+          string,
+          { id: string; testClockId?: string }
+        >;
+        const testClockId = providerMap.stripe?.testClockId;
+        if (testClockId) {
+          testClockIds.add(testClockId);
+        }
+      }
+
+      for (const testClockId of testClockIds) {
+        await stripeClient.testHelpers.testClocks.del(testClockId).catch(() => {});
+      }
+
       // Wait for cleanup webhooks to arrive and be processed
       await new Promise((resolve) => setTimeout(resolve, 10_000));
       server.close();
@@ -213,59 +239,50 @@ export async function createTestPayKit(): Promise<TestPayKit> {
 }
 
 /**
- * Creates a PayKit customer and subscribes to Free (triggers Stripe customer
- * creation on the test clock). No payment method attached — first paid
- * subscribe will go through checkout.
+ * Creates a PayKit customer. In testing mode this also provisions a Stripe
+ * customer with a dedicated test clock. No payment method attached — first
+ * paid subscribe will go through checkout.
  */
-export async function createTestCustomer(
-  t: TestPayKit,
-  input: { id: string; email: string; name: string },
-): Promise<{ customerId: string; providerCustomerId: string }> {
-  // Create customer in PayKit DB
-  await t.paykit.upsertCustomer(input);
-
-  // Subscribe to free plan — this triggers Stripe customer creation via
-  // our test clock override and assigns the default free plan
-  await t.paykit.subscribe({
-    customerId: input.id,
-    planId: "free",
-    successUrl: "https://example.com/success",
-  });
+export async function createTestCustomer(input: {
+  t: TestPayKit;
+  customer: { id: string; email: string; name: string };
+}): Promise<{ customerId: string; providerCustomerId: string }> {
+  await input.t.paykit.upsertCustomer(input.customer);
 
   // Now the provider customer ID is stored in the customer's provider JSONB column
-  const row = await t.database.query.customer.findFirst({
-    where: eq(customer.id, input.id),
+  const row = await input.t.database.query.customer.findFirst({
+    where: eq(customer.id, input.customer.id),
   });
   const providerMap = (row?.provider ?? {}) as Record<string, { id: string }>;
   const providerCustomerId = providerMap.stripe?.id;
 
   if (!providerCustomerId) {
-    throw new Error(`No Stripe provider customer ID found for customer "${input.id}"`);
+    throw new Error(`No Stripe provider customer ID found for customer "${input.customer.id}"`);
   }
 
-  return { customerId: input.id, providerCustomerId };
+  return { customerId: input.customer.id, providerCustomerId };
 }
 
 /**
  * Creates a PayKit customer with a pre-attached payment method.
  * Subscribe calls will go through the direct path (no checkout).
  */
-export async function createTestCustomerWithPM(
-  t: TestPayKit,
-  input: { id: string; email: string; name: string },
-): Promise<{ customerId: string; providerCustomerId: string }> {
-  const { customerId, providerCustomerId } = await createTestCustomer(t, input);
+export async function createTestCustomerWithPM(input: {
+  t: TestPayKit;
+  customer: { id: string; email: string; name: string };
+}): Promise<{ customerId: string; providerCustomerId: string }> {
+  const { customerId, providerCustomerId } = await createTestCustomer(input);
 
   // Attach test payment method to Stripe customer
-  const pm = await t.stripeClient.paymentMethods.attach("pm_card_visa", {
+  const pm = await input.t.stripeClient.paymentMethods.attach("pm_card_visa", {
     customer: providerCustomerId,
   });
-  await t.stripeClient.customers.update(providerCustomerId, {
+  await input.t.stripeClient.customers.update(providerCustomerId, {
     invoice_settings: { default_payment_method: pm.id },
   });
 
   // Sync payment method into PayKit DB
-  await syncPaymentMethodByProviderCustomer(t.ctx.database, {
+  await syncPaymentMethodByProviderCustomer(input.t.ctx.database, {
     paymentMethod: {
       providerMethodId: pm.id,
       type: pm.type,
@@ -275,23 +292,23 @@ export async function createTestCustomerWithPM(
       isDefault: true,
     },
     providerCustomerId,
-    providerId: t.ctx.provider.id,
+    providerId: input.t.ctx.provider.id,
   });
 
   return { customerId, providerCustomerId };
 }
 
-export async function expectProduct(
-  database: PayKitDatabase,
-  customerId: string,
-  planId: string,
+export async function expectProduct(input: {
+  database: PayKitDatabase;
+  customerId: string;
+  planId: string;
   expected: {
     status: "active" | "canceled" | "ended" | "scheduled";
     canceled?: boolean;
     hasPeriodEnd?: boolean;
-  },
-): Promise<void> {
-  const rows = await database
+  };
+}): Promise<void> {
+  const rows = await input.database
     .select({
       status: subscription.status,
       canceled: subscription.canceled,
@@ -301,9 +318,9 @@ export async function expectProduct(
     .innerJoin(product, eq(product.internalId, subscription.productInternalId))
     .where(
       and(
-        eq(subscription.customerId, customerId),
-        eq(product.id, planId),
-        eq(subscription.status, expected.status),
+        eq(subscription.customerId, input.customerId),
+        eq(product.id, input.planId),
+        eq(subscription.status, input.expected.status),
       ),
     )
     .orderBy(desc(subscription.createdAt))
@@ -312,40 +329,40 @@ export async function expectProduct(
 
   if (!row) {
     throw new Error(
-      `Expected product "${planId}" with status "${expected.status}" for customer "${customerId}", but not found`,
+      `Expected product "${input.planId}" with status "${input.expected.status}" for customer "${input.customerId}", but not found`,
     );
   }
 
-  if (expected.canceled !== undefined && row.canceled !== expected.canceled) {
+  if (input.expected.canceled !== undefined && row.canceled !== input.expected.canceled) {
     throw new Error(
-      `Expected product "${planId}" canceled=${String(expected.canceled)}, got ${String(row.canceled)}`,
+      `Expected product "${input.planId}" canceled=${String(input.expected.canceled)}, got ${String(row.canceled)}`,
     );
   }
 
-  if (expected.hasPeriodEnd === true && row.currentPeriodEndAt == null) {
-    throw new Error(`Expected product "${planId}" to have period end, but it's null`);
+  if (input.expected.hasPeriodEnd === true && row.currentPeriodEndAt == null) {
+    throw new Error(`Expected product "${input.planId}" to have period end, but it's null`);
   }
 
-  if (expected.hasPeriodEnd === false && row.currentPeriodEndAt != null) {
+  if (input.expected.hasPeriodEnd === false && row.currentPeriodEndAt != null) {
     throw new Error(
-      `Expected product "${planId}" to have no period end, but got ${String(row.currentPeriodEndAt)}`,
+      `Expected product "${input.planId}" to have no period end, but got ${String(row.currentPeriodEndAt)}`,
     );
   }
 }
 
-export async function expectProductNotPresent(
-  database: PayKitDatabase,
-  customerId: string,
-  planId: string,
-): Promise<void> {
-  const rows = await database
+export async function expectProductNotPresent(input: {
+  database: PayKitDatabase;
+  customerId: string;
+  planId: string;
+}): Promise<void> {
+  const rows = await input.database
     .select({ status: subscription.status })
     .from(subscription)
     .innerJoin(product, eq(product.internalId, subscription.productInternalId))
     .where(
       and(
-        eq(subscription.customerId, customerId),
-        eq(product.id, planId),
+        eq(subscription.customerId, input.customerId),
+        eq(product.id, input.planId),
         sql`${subscription.status} NOT IN ('ended', 'canceled')`,
       ),
     )
@@ -354,202 +371,198 @@ export async function expectProductNotPresent(
   if (rows.length > 0) {
     const row = rows[0]!;
     throw new Error(
-      `Expected product "${planId}" not present, but found with status "${row.status}"`,
+      `Expected product "${input.planId}" not present, but found with status "${row.status}"`,
     );
   }
 }
 
-export async function expectInvoiceCount(
-  database: PayKitDatabase,
-  customerId: string,
-  expected: number,
-): Promise<void> {
-  const result = await database
+export async function expectInvoiceCount(input: {
+  database: PayKitDatabase;
+  customerId: string;
+  expectedAtLeast: number;
+}): Promise<void> {
+  const result = await input.database
     .select({ count: count() })
     .from(invoice)
-    .where(eq(invoice.customerId, customerId));
+    .where(eq(invoice.customerId, input.customerId));
   const actual = result[0]?.count ?? 0;
-  if (actual < expected) {
-    throw new Error(`Expected at least ${String(expected)} invoices, got ${String(actual)}`);
+  if (actual < input.expectedAtLeast) {
+    throw new Error(
+      `Expected at least ${String(input.expectedAtLeast)} invoices, got ${String(actual)}`,
+    );
   }
 }
 
-export async function expectSubscription(
-  database: PayKitDatabase,
-  customerId: string,
-  expected: { status?: string; cancelAtPeriodEnd?: boolean },
-): Promise<void> {
-  const rows = await database
+export async function expectSubscription(input: {
+  database: PayKitDatabase;
+  customerId: string;
+  expected: { status?: string; cancelAtPeriodEnd?: boolean };
+}): Promise<void> {
+  const rows = await input.database
     .select({
       status: subscription.status,
       cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
     })
     .from(subscription)
-    .where(eq(subscription.customerId, customerId))
+    .where(eq(subscription.customerId, input.customerId))
     .orderBy(desc(subscription.updatedAt))
     .limit(1);
   const row = rows[0];
 
   if (!row) {
-    throw new Error(`No subscription found for customer "${customerId}"`);
+    throw new Error(`No subscription found for customer "${input.customerId}"`);
   }
 
-  if (expected.status !== undefined && row.status !== expected.status) {
-    throw new Error(`Expected subscription status "${expected.status}", got "${row.status}"`);
+  if (input.expected.status !== undefined && row.status !== input.expected.status) {
+    throw new Error(`Expected subscription status "${input.expected.status}", got "${row.status}"`);
   }
 
   if (
-    expected.cancelAtPeriodEnd !== undefined &&
-    row.cancelAtPeriodEnd !== expected.cancelAtPeriodEnd
+    input.expected.cancelAtPeriodEnd !== undefined &&
+    row.cancelAtPeriodEnd !== input.expected.cancelAtPeriodEnd
   ) {
     throw new Error(
-      `Expected cancel_at_period_end=${String(expected.cancelAtPeriodEnd)}, got ${String(row.cancelAtPeriodEnd)}`,
+      `Expected cancel_at_period_end=${String(input.expected.cancelAtPeriodEnd)}, got ${String(row.cancelAtPeriodEnd)}`,
     );
   }
 }
 
-/**
- * Fakes a checkout completion. After paykit.subscribe() returns a paymentUrl
- * (checkout session), this:
- * 1. Retrieves the checkout session from Stripe
- * 2. Attaches a test payment method and creates a real subscription
- * 3. Feeds a crafted checkout.completed event to PayKit's webhook handler
- */
-export async function fakeCheckoutCompletion(
-  t: TestPayKit,
-  paymentUrl: string,
-  providerCustomerId: string,
-): Promise<void> {
-  // Extract checkout session ID from the URL
-  const url = new URL(paymentUrl);
-  const pathParts = url.pathname.split("/");
-  const sessionId = pathParts[pathParts.length - 1] ?? "";
+async function getPresentPlansInGroup(input: {
+  database: PayKitDatabase;
+  customerId: string;
+  group: string;
+}): Promise<
+  Array<{
+    canceled: boolean;
+    currentPeriodEndAt: Date | null;
+    planId: string;
+    status: string;
+  }>
+> {
+  return input.database
+    .select({
+      canceled: subscription.canceled,
+      currentPeriodEndAt: subscription.currentPeriodEndAt,
+      planId: product.id,
+      status: subscription.status,
+    })
+    .from(subscription)
+    .innerJoin(product, eq(product.internalId, subscription.productInternalId))
+    .where(
+      and(
+        eq(subscription.customerId, input.customerId),
+        eq(product.group, input.group),
+        inArray(subscription.status, [...presentSubscriptionStatuses]),
+        or(isNull(subscription.endedAt), sql`${subscription.endedAt} > now()`),
+      ),
+    )
+    .orderBy(desc(subscription.createdAt));
+}
 
-  // Retrieve the session to get metadata
-  const session = await t.stripeClient.checkout.sessions.retrieve(sessionId);
-  const metadata = session.metadata ?? {};
-
-  // Attach test payment method
-  const pm = await t.stripeClient.paymentMethods.attach("pm_card_visa", {
-    customer: providerCustomerId,
-  });
-  await t.stripeClient.customers.update(providerCustomerId, {
-    invoice_settings: { default_payment_method: pm.id },
-  });
-
-  // Sync payment method into PayKit DB
-  await syncPaymentMethodByProviderCustomer(t.ctx.database, {
-    paymentMethod: {
-      providerMethodId: pm.id,
-      type: pm.type,
-      last4: pm.card?.last4,
-      expiryMonth: pm.card?.exp_month,
-      expiryYear: pm.card?.exp_year,
-      isDefault: true,
-    },
-    providerCustomerId,
-    providerId: t.ctx.provider.id,
-  });
-
-  // Get the price from the session line items
-  const lineItems = await t.stripeClient.checkout.sessions.listLineItems(sessionId);
-  const stripePriceId = lineItems.data[0]?.price?.id;
-  if (!stripePriceId) {
-    throw new Error("No price found on checkout session");
-  }
-
-  // Create real subscription via Stripe API
-  const sub = await t.stripeClient.subscriptions.create({
-    customer: providerCustomerId,
-    items: [{ price: stripePriceId }],
-    metadata,
-    expand: ["latest_invoice"],
-  });
-
-  const firstItem = sub.items.data[0];
-  const periodStart = firstItem?.current_period_start ?? null;
-  const periodEnd = firstItem?.current_period_end ?? null;
-
-  const latestInvoice = sub.latest_invoice;
-  const normalizedInvoice =
-    latestInvoice && typeof latestInvoice !== "string"
-      ? {
-          currency: latestInvoice.currency,
-          hostedUrl: latestInvoice.hosted_invoice_url ?? null,
-          periodEndAt: latestInvoice.period_end ? new Date(latestInvoice.period_end * 1000) : null,
-          periodStartAt: latestInvoice.period_start
-            ? new Date(latestInvoice.period_start * 1000)
-            : null,
-          providerInvoiceId: latestInvoice.id,
-          status: latestInvoice.status,
-          totalAmount: latestInvoice.total,
-        }
-      : undefined;
-
-  const normalizedSub = {
-    cancelAtPeriodEnd: sub.cancel_at_period_end,
-    canceledAt: sub.canceled_at != null ? new Date(sub.canceled_at * 1000) : null,
-    currentPeriodEndAt: periodEnd != null ? new Date(periodEnd * 1000) : null,
-    currentPeriodStartAt: periodStart != null ? new Date(periodStart * 1000) : null,
-    endedAt: sub.ended_at != null ? new Date(sub.ended_at * 1000) : null,
-    providerSubscriptionId: sub.id,
-    providerSubscriptionScheduleId: null,
-    status: sub.status,
-  };
-
-  // Expire the original checkout session since we bypassed it
-  await t.stripeClient.checkout.sessions.expire(sessionId).catch(() => {});
-
-  // Override handleWebhook to return our crafted checkout.completed event.
-  // Use a sentinel in the body to identify our fake request vs real webhooks.
-  const fakeId = `fake_${String(Date.now())}`;
-  const originalHandleWebhook = t.ctx.stripe.handleWebhook.bind(t.ctx.stripe);
-  t.ctx.stripe.handleWebhook = async (data) => {
-    // Only intercept our fake request, let real webhooks pass through
-    if (!data.body.includes(fakeId)) {
-      return originalHandleWebhook(data);
-    }
-    // Restore after consuming
-    t.ctx.stripe.handleWebhook = originalHandleWebhook;
-
-    return [
-      {
-        name: "checkout.completed" as const,
-        payload: {
-          checkoutSessionId: session.id,
-          invoice: normalizedInvoice,
-          metadata,
-          mode: "subscription" as const,
-          paymentStatus: "paid",
-          providerCustomerId,
-          providerEventId: `evt_fake_checkout_${String(Date.now())}`,
-          providerSubscriptionId: sub.id,
-          status: "complete",
-          subscription: normalizedSub,
-        },
-      },
-    ];
-  };
-
-  // Send a fake webhook request with sentinel so the override can identify it
-  const response = await fetch(
-    `http://localhost:${String(WEBHOOK_PORT)}/paykit/api/webhook/stripe`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "checkout.session.completed", id: fakeId }),
-    },
+export async function expectSingleActivePlanInGroup(input: {
+  database: PayKitDatabase;
+  customerId: string;
+  group: string;
+  planId: string;
+}): Promise<void> {
+  const rows = await getPresentPlansInGroup(input);
+  const activeRows = rows.filter((row) =>
+    activeSubscriptionStatuses.includes(row.status as (typeof activeSubscriptionStatuses)[number]),
   );
 
-  if (!response.ok) {
-    const text = await response.text();
-    // Restore handler if our request failed
-    t.ctx.stripe.handleWebhook = originalHandleWebhook;
-    throw new Error(`Fake checkout webhook failed (${String(response.status)}): ${text}`);
+  if (activeRows.length !== 1) {
+    throw new Error(
+      `Expected exactly one active plan in group "${input.group}" for customer "${input.customerId}", got ${String(activeRows.length)}: ${JSON.stringify(activeRows)}`,
+    );
+  }
+
+  const activeRow = activeRows[0]!;
+  if (activeRow.planId !== input.planId) {
+    throw new Error(
+      `Expected active plan "${input.planId}" in group "${input.group}", got "${activeRow.planId}"`,
+    );
   }
 }
 
-function startWebhookServer(paykit: ReturnType<typeof createPayKit>): Server {
+export async function expectSingleScheduledPlanInGroup(input: {
+  database: PayKitDatabase;
+  customerId: string;
+  group: string;
+  planId: string;
+}): Promise<void> {
+  const rows = await getPresentPlansInGroup(input);
+  const scheduledRows = rows.filter((row) => row.status === "scheduled");
+
+  if (scheduledRows.length !== 1) {
+    throw new Error(
+      `Expected exactly one scheduled plan in group "${input.group}" for customer "${input.customerId}", got ${String(scheduledRows.length)}: ${JSON.stringify(scheduledRows)}`,
+    );
+  }
+
+  const scheduledRow = scheduledRows[0]!;
+  if (scheduledRow.planId !== input.planId) {
+    throw new Error(
+      `Expected scheduled plan "${input.planId}" in group "${input.group}", got "${scheduledRow.planId}"`,
+    );
+  }
+}
+
+export async function expectNoScheduledPlanInGroup(input: {
+  database: PayKitDatabase;
+  customerId: string;
+  group: string;
+}): Promise<void> {
+  const rows = await getPresentPlansInGroup(input);
+  const scheduledRows = rows.filter((row) => row.status === "scheduled");
+
+  if (scheduledRows.length > 0) {
+    throw new Error(
+      `Expected no scheduled plans in group "${input.group}" for customer "${input.customerId}", found: ${JSON.stringify(scheduledRows)}`,
+    );
+  }
+}
+
+export async function expectExactMeteredBalance(input: {
+  customerId: string;
+  featureId: Parameters<SmokePayKit["check"]>[0]["featureId"];
+  limit: number;
+  remaining: number;
+  paykit: SmokePayKit;
+}): Promise<void> {
+  const result = await input.paykit.check({
+    customerId: input.customerId,
+    featureId: input.featureId,
+  });
+
+  if (!result.allowed) {
+    throw new Error(
+      `Expected feature "${input.featureId}" to be allowed for customer "${input.customerId}"`,
+    );
+  }
+
+  if (!result.balance || result.balance.unlimited) {
+    throw new Error(
+      `Expected metered balance for feature "${input.featureId}", got ${JSON.stringify(result.balance)}`,
+    );
+  }
+
+  if (result.balance.limit !== input.limit) {
+    throw new Error(
+      `Expected feature "${input.featureId}" limit ${String(input.limit)}, got ${String(result.balance.limit)}`,
+    );
+  }
+
+  if (result.balance.remaining !== input.remaining) {
+    throw new Error(
+      `Expected feature "${input.featureId}" remaining ${String(input.remaining)}, got ${String(result.balance.remaining)}`,
+    );
+  }
+}
+
+function startWebhookServer(
+  paykit: Pick<SmokePayKit, "handler">,
+  webhookRequests: CapturedWebhookRequest[],
+): Server {
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const chunks: Buffer[] = [];
     for await (const chunk of req) {
@@ -562,6 +575,13 @@ function startWebhookServer(paykit: ReturnType<typeof createPayKit>): Server {
     for (const [key, value] of Object.entries(req.headers)) {
       if (typeof value === "string") headers.set(key, value);
     }
+
+    webhookRequests.push({
+      body,
+      headers: Object.fromEntries(headers.entries()),
+      path: url.pathname,
+      receivedAt: new Date(),
+    });
 
     const request = new Request(url, {
       method: req.method,
@@ -583,38 +603,31 @@ function startWebhookServer(paykit: ReturnType<typeof createPayKit>): Server {
   return server;
 }
 
-export async function advanceTestClock(
-  stripeClient: Stripe,
-  testClockId: string,
-  toDate: string,
-): Promise<void> {
-  const frozenTime = Math.floor(new Date(toDate).getTime() / 1000);
-  await stripeClient.testHelpers.testClocks.advance(testClockId, {
-    frozen_time: frozenTime,
+export async function advanceTestClock(input: {
+  customerId: string;
+  frozenTime: Date;
+  t: TestPayKit;
+}): Promise<void> {
+  await input.t.paykit.advanceTestClock({
+    customerId: input.customerId,
+    frozenTime: input.frozenTime,
   });
-
-  // Poll until clock is ready
-  for (let i = 0; i < 60; i++) {
-    const clock = await stripeClient.testHelpers.testClocks.retrieve(testClockId);
-    if (clock.status === "ready") return;
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-  throw new Error(`Test clock ${testClockId} did not reach 'ready' status`);
 }
 
-export async function waitForWebhook(
-  database: PayKitDatabase,
-  eventType: string,
-  options?: { timeout?: number; after?: Date },
-): Promise<Record<string, unknown>> {
-  const timeout = options?.timeout ?? 15_000;
-  const after = options?.after ?? new Date(0);
+export async function waitForWebhook(input: {
+  after?: Date;
+  database: PayKitDatabase;
+  eventType: string;
+  timeout?: number;
+}): Promise<Record<string, unknown>> {
+  const timeout = input.timeout ?? 30_000;
+  const after = input.after ?? new Date(0);
   const start = Date.now();
 
   while (Date.now() - start < timeout) {
-    const row = await database.query.webhookEvent.findFirst({
+    const row = await input.database.query.webhookEvent.findFirst({
       where: and(
-        eq(webhookEvent.type, eventType),
+        eq(webhookEvent.type, input.eventType),
         inArray(webhookEvent.status, ["processed", "failed"]),
         gt(webhookEvent.receivedAt, after),
       ),
@@ -623,7 +636,7 @@ export async function waitForWebhook(
 
     if (row) {
       if (row.status === "failed") {
-        throw new Error(`Webhook ${eventType} failed: ${String(row.error)}`);
+        throw new Error(`Webhook ${input.eventType} failed: ${String(row.error)}`);
       }
       return row as unknown as Record<string, unknown>;
     }
@@ -631,127 +644,54 @@ export async function waitForWebhook(
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
-  throw new Error(`Timed out waiting for webhook: ${eventType}`);
+  throw new Error(`Timed out waiting for webhook: ${input.eventType}`);
 }
 
-/**
- * Manually fires a subscription.updated event for a renewal.
- * Retrieves the current subscription from Stripe and normalizes it.
- */
-export async function fakeSubscriptionUpdatedEvent(
-  t: TestPayKit,
-  providerSubscriptionId: string,
-  providerCustomerId: string,
-): Promise<void> {
-  const sub = await t.stripeClient.subscriptions.retrieve(providerSubscriptionId);
-  const firstItem = sub.items.data[0];
-  const periodStart = firstItem?.current_period_start ?? null;
-  const periodEnd = firstItem?.current_period_end ?? null;
+export async function waitForForwardedWebhookRequest(input: {
+  after?: Date;
+  eventType: string;
+  requests: CapturedWebhookRequest[];
+  timeout?: number;
+}): Promise<CapturedWebhookRequest> {
+  const timeout = input.timeout ?? 15_000;
+  const after = input.after ?? new Date(0);
+  const start = Date.now();
 
-  const providerPriceId = firstItem?.price?.id ?? null;
+  while (Date.now() - start < timeout) {
+    for (let i = input.requests.length - 1; i >= 0; i -= 1) {
+      const request = input.requests[i]!;
+      if (request.receivedAt <= after) {
+        continue;
+      }
 
-  const normalizedSub = {
-    cancelAtPeriodEnd: sub.cancel_at_period_end,
-    canceledAt: sub.canceled_at != null ? new Date(sub.canceled_at * 1000) : null,
-    currentPeriodEndAt: periodEnd != null ? new Date(periodEnd * 1000) : null,
-    currentPeriodStartAt: periodStart != null ? new Date(periodStart * 1000) : null,
-    endedAt: sub.ended_at != null ? new Date(sub.ended_at * 1000) : null,
-    providerPriceId,
-    providerSubscriptionId: sub.id,
-    providerSubscriptionScheduleId: null,
-    status: sub.status,
-  };
-
-  const fakeId = `fake_renewed_${String(Date.now())}`;
-  const originalHandleWebhook = t.ctx.stripe.handleWebhook.bind(t.ctx.stripe);
-  t.ctx.stripe.handleWebhook = async (data) => {
-    if (!data.body.includes(fakeId)) {
-      return originalHandleWebhook(data);
+      try {
+        const payload = JSON.parse(request.body) as { type?: string };
+        if (payload.type === input.eventType) {
+          return request;
+        }
+      } catch {
+        continue;
+      }
     }
-    t.ctx.stripe.handleWebhook = originalHandleWebhook;
-    return [
-      {
-        name: "subscription.updated" as const,
-        actions: [
-          {
-            type: "subscription.upsert" as const,
-            data: { providerCustomerId, subscription: normalizedSub },
-          },
-        ],
-        payload: {
-          providerCustomerId,
-          providerEventId: `evt_${fakeId}`,
-          subscription: normalizedSub,
-        },
-      },
-    ];
-  };
 
-  const response = await fetch(
-    `http://localhost:${String(WEBHOOK_PORT)}/paykit/api/webhook/stripe`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "customer.subscription.updated", id: fakeId }),
-    },
-  );
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(
-      `Fake subscription.updated webhook failed (${String(response.status)}): ${text}`,
-    );
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
+
+  throw new Error(`Timed out waiting for forwarded webhook request: ${input.eventType}`);
 }
 
-/**
- * Manually fires a subscription.deleted event to PayKit's webhook handler.
- * Needed because stripe listen doesn't reliably forward test clock lifecycle events.
- */
-export async function fakeSubscriptionDeletedEvent(
-  t: TestPayKit,
-  providerSubscriptionId: string,
-  providerCustomerId: string,
-): Promise<void> {
-  const fakeId = `fake_deleted_${String(Date.now())}`;
-  const originalHandleWebhook = t.ctx.stripe.handleWebhook.bind(t.ctx.stripe);
-  t.ctx.stripe.handleWebhook = async (data) => {
-    if (!data.body.includes(fakeId)) {
-      return originalHandleWebhook(data);
-    }
-    t.ctx.stripe.handleWebhook = originalHandleWebhook;
-    return [
-      {
-        name: "subscription.deleted" as const,
-        actions: [
-          {
-            type: "subscription.delete" as const,
-            data: { providerCustomerId, providerSubscriptionId },
-          },
-        ],
-        payload: {
-          providerCustomerId,
-          providerEventId: `evt_${fakeId}`,
-          providerSubscriptionId,
-        },
-      },
-    ];
-  };
-
-  const response = await fetch(
-    `http://localhost:${String(WEBHOOK_PORT)}/paykit/api/webhook/stripe`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "customer.subscription.deleted", id: fakeId }),
-    },
-  );
+export async function replayWebhookRequest(input: {
+  request: CapturedWebhookRequest;
+}): Promise<void> {
+  const response = await fetch(`http://localhost:${String(WEBHOOK_PORT)}${input.request.path}`, {
+    body: input.request.body,
+    headers: input.request.headers,
+    method: "POST",
+  });
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(
-      `Fake subscription.deleted webhook failed (${String(response.status)}): ${text}`,
-    );
+    throw new Error(`Webhook replay failed (${String(response.status)}): ${text}`);
   }
 }
 

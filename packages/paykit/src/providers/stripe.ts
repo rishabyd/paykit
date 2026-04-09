@@ -2,7 +2,7 @@ import StripeSdk from "stripe";
 
 import { PayKitError, PAYKIT_ERROR_CODES } from "../core/errors";
 import type { NormalizedWebhookEvent } from "../types/events";
-import type { StripeProviderConfig, StripeRuntime } from "./provider";
+import type { ProviderTestClock, StripeProviderConfig, StripeRuntime } from "./provider";
 
 type StripeInvoiceWithExtras = StripeSdk.Invoice & {
   payment_intent?: StripeSdk.PaymentIntent | string | null;
@@ -119,6 +119,21 @@ function normalizeStripeSubscription(subscription: StripeSubscriptionWithExtras)
         : subscription.schedule?.id) ?? null,
     status: subscription.status,
   };
+}
+
+function normalizeStripeTestClock(clock: StripeSdk.TestHelpers.TestClock): ProviderTestClock {
+  return {
+    frozenTime: new Date(clock.frozen_time * 1000),
+    id: clock.id,
+    name: clock.name ?? null,
+    status: clock.status,
+  };
+}
+
+function assertStripeTestKey(options: StripeProviderConfig): void {
+  if (!options.secretKey.startsWith("sk_test_")) {
+    throw PayKitError.from("BAD_REQUEST", PAYKIT_ERROR_CODES.PROVIDER_TEST_KEY_REQUIRED);
+  }
 }
 
 async function retrieveExpandedSubscription(
@@ -486,6 +501,16 @@ export function createStripeProvider(
 
   return {
     async upsertCustomer(data) {
+      let testClock: ProviderTestClock | undefined;
+      if (data.createTestClock) {
+        assertStripeTestKey(options);
+        const clock = await client.testHelpers.testClocks.create({
+          frozen_time: Math.floor(Date.now() / 1000),
+          name: data.id,
+        });
+        testClock = normalizeStripeTestClock(clock);
+      }
+
       const customer = await client.customers.create({
         email: data.email,
         metadata: {
@@ -493,13 +518,43 @@ export function createStripeProvider(
           ...data.metadata,
         },
         name: data.name,
+        test_clock: testClock?.id,
       });
 
-      return { providerCustomerId: customer.id };
+      return {
+        providerCustomer: {
+          id: customer.id,
+          frozenTime: testClock?.frozenTime.toISOString(),
+          testClockId: testClock?.id,
+        },
+      };
     },
 
     async deleteCustomer(data) {
       await client.customers.del(data.providerCustomerId);
+    },
+
+    async getTestClock(data) {
+      const clock = await client.testHelpers.testClocks.retrieve(data.testClockId);
+      return normalizeStripeTestClock(clock);
+    },
+
+    async advanceTestClock(data) {
+      assertStripeTestKey(options);
+
+      await client.testHelpers.testClocks.advance(data.testClockId, {
+        frozen_time: Math.floor(data.frozenTime.getTime() / 1000),
+      });
+
+      for (let i = 0; i < 60; i++) {
+        const clock = await client.testHelpers.testClocks.retrieve(data.testClockId);
+        if (clock.status === "ready") {
+          return normalizeStripeTestClock(clock);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+
+      throw new Error(`Test clock ${data.testClockId} did not reach 'ready' status`);
     },
 
     async attachPaymentMethod(data) {

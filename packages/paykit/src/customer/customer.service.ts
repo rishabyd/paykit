@@ -12,6 +12,7 @@ import {
   subscription,
 } from "../database/schema";
 import { getLatestProduct } from "../product/product.service";
+import type { ProviderCustomer, ProviderCustomerMap } from "../providers/provider";
 import {
   getActiveSubscriptionInGroup,
   getCurrentSubscriptions,
@@ -138,7 +139,19 @@ export async function syncCustomerWithDefaults(
 ): Promise<Customer> {
   const syncedCustomer = await syncCustomer(ctx.database, input);
   await ensureDefaultPlansForCustomer(ctx, syncedCustomer.id);
-  return syncedCustomer;
+  const providerCustomer = await ensureTestingProviderCustomer(ctx, syncedCustomer.id);
+
+  if (!providerCustomer) {
+    return syncedCustomer;
+  }
+
+  return {
+    ...syncedCustomer,
+    provider: {
+      ...(syncedCustomer.provider ?? {}),
+      [ctx.provider.id]: providerCustomer,
+    },
+  };
 }
 
 export async function applyCustomerWebhookAction(
@@ -186,6 +199,7 @@ export async function getCustomerWithDetails(
 
   const subRows = await ctx.database
     .select({
+      planGroup: product.group,
       planId: product.id,
       status: subscription.status,
       cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
@@ -202,6 +216,28 @@ export async function getCustomerWithDetails(
       ),
     )
     .orderBy(desc(subscription.createdAt));
+
+  const subscriptionsByGroup = new Map<string, string[]>();
+  for (const row of subRows) {
+    const currentGroup = subscriptionsByGroup.get(row.planGroup) ?? [];
+    currentGroup.push(row.planId);
+    subscriptionsByGroup.set(row.planGroup, currentGroup);
+  }
+
+  for (const [group, planIds] of subscriptionsByGroup) {
+    if (planIds.length < 2) {
+      continue;
+    }
+
+    ctx.logger.warn(
+      {
+        customerId,
+        group,
+        planIds,
+      },
+      "multiple active subscriptions detected while reading customer details",
+    );
+  }
 
   const entRows = await ctx.database
     .select({
@@ -246,11 +282,30 @@ export async function getCustomerWithDetails(
   };
 }
 
-type ProviderCustomerMap = Record<string, { id: string }>;
+export function getProviderCustomer(
+  customerRow: Customer,
+  providerId: string,
+): ProviderCustomer | null {
+  const providerMap = (customerRow.provider ?? {}) as ProviderCustomerMap;
+  return providerMap[providerId] ?? null;
+}
+
+export async function setProviderCustomer(
+  database: PayKitDatabase,
+  input: { customerId: string; providerCustomer: ProviderCustomer; providerId: string },
+): Promise<void> {
+  const existingCustomer = await getCustomerByIdOrThrow(database, input.customerId);
+  const providerMap = (existingCustomer.provider ?? {}) as ProviderCustomerMap;
+  providerMap[input.providerId] = input.providerCustomer;
+
+  await database
+    .update(customer)
+    .set({ provider: providerMap, updatedAt: new Date() })
+    .where(eq(customer.id, input.customerId));
+}
 
 export function getProviderCustomerId(customerRow: Customer, providerId: string): string | null {
-  const providerMap = (customerRow.provider ?? {}) as ProviderCustomerMap;
-  return providerMap[providerId]?.id ?? null;
+  return getProviderCustomer(customerRow, providerId)?.id ?? null;
 }
 
 export async function getProviderCustomerIdForCustomer(
@@ -278,32 +333,48 @@ export async function findCustomerByProviderCustomerId(
 export async function upsertProviderCustomer(
   ctx: PayKitContext,
   input: { customerId: string },
-): Promise<{ customerId: string; providerCustomerId: string }> {
+): Promise<{ customerId: string; providerCustomer: ProviderCustomer; providerCustomerId: string }> {
   const providerId = ctx.provider.id;
 
   const existingCustomer = await getCustomerByIdOrThrow(ctx.database, input.customerId);
-  const existingProviderCustomerId = getProviderCustomerId(existingCustomer, providerId);
+  const existingProviderCustomer = getProviderCustomer(existingCustomer, providerId);
+  const existingProviderCustomerId = existingProviderCustomer?.id ?? null;
 
   if (existingProviderCustomerId) {
-    return { customerId: input.customerId, providerCustomerId: existingProviderCustomerId };
+    return {
+      customerId: input.customerId,
+      providerCustomer: existingProviderCustomer as ProviderCustomer,
+      providerCustomerId: existingProviderCustomerId,
+    };
   }
 
-  const { providerCustomerId } = await ctx.stripe.upsertCustomer({
+  const { providerCustomer } = await ctx.stripe.upsertCustomer({
+    createTestClock: ctx.options.testing?.enabled === true,
     id: existingCustomer.id,
     email: existingCustomer.email ?? undefined,
     name: existingCustomer.name ?? undefined,
     metadata: existingCustomer.metadata ?? undefined,
   });
+  const providerCustomerId = providerCustomer.id;
+  await setProviderCustomer(ctx.database, {
+    customerId: input.customerId,
+    providerCustomer,
+    providerId,
+  });
 
-  const providerMap = (existingCustomer.provider ?? {}) as ProviderCustomerMap;
-  providerMap[providerId] = { id: providerCustomerId };
+  return { customerId: input.customerId, providerCustomer, providerCustomerId };
+}
 
-  await ctx.database
-    .update(customer)
-    .set({ provider: providerMap, updatedAt: new Date() })
-    .where(eq(customer.id, input.customerId));
+export async function ensureTestingProviderCustomer(
+  ctx: PayKitContext,
+  customerId: string,
+): Promise<ProviderCustomer | null> {
+  if (ctx.options.testing?.enabled !== true) {
+    return null;
+  }
 
-  return { customerId: input.customerId, providerCustomerId };
+  const { providerCustomer } = await upsertProviderCustomer(ctx, { customerId });
+  return providerCustomer;
 }
 
 export async function deleteCustomerFromDatabase(

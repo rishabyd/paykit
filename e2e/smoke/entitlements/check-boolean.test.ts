@@ -5,7 +5,6 @@ import {
   createTestPayKit,
   dumpStateOnFailure,
   type TestPayKit,
-  waitForWebhook,
 } from "../setup";
 
 describe("check-boolean: boolean feature access", () => {
@@ -14,10 +13,13 @@ describe("check-boolean: boolean feature access", () => {
 
   beforeAll(async () => {
     t = await createTestPayKit();
-    const customer = await createTestCustomerWithPM(t, {
-      id: "test_check_bool",
-      email: "check-bool@test.com",
-      name: "Check Boolean Test",
+    const customer = await createTestCustomerWithPM({
+      t,
+      customer: {
+        id: "test_check_bool",
+        email: "check-bool@test.com",
+        name: "Check Boolean Test",
+      },
     });
     customerId = customer.customerId;
   });
@@ -33,13 +35,11 @@ describe("check-boolean: boolean feature access", () => {
       expect(freeCheck.allowed).toBe(false);
 
       // Subscribe to Pro (includes dashboard)
-      const b1 = new Date();
       await t.paykit.subscribe({
         customerId,
         planId: "pro",
         successUrl: "https://example.com/success",
       });
-      await waitForWebhook(t.database, "subscription.updated", { after: b1 });
 
       // On Pro — dashboard accessible
       const proCheck = await t.paykit.check({ customerId, featureId: "dashboard" });

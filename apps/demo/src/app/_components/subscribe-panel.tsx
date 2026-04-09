@@ -1,6 +1,7 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,8 @@ import { api, type RouterOutputs } from "@/trpc/react";
 
 type SubscribePlanId = PayKit["planId"];
 type CurrentPlan = RouterOutputs["paykit"]["currentPlans"][number];
+
+const testClockQueryKey = ["paykit", "test-clock"] as const;
 
 const planCatalog = [
   {
@@ -53,6 +56,30 @@ function formatDate(date: Date | string) {
   });
 }
 
+function formatDateTime(date: Date | string) {
+  return new Date(date).toLocaleString(undefined, {
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function advanceClockTime(date: Date | string, input: { days?: number; months?: number }) {
+  const next = new Date(date);
+
+  if (input.days) {
+    next.setUTCDate(next.getUTCDate() + input.days);
+  }
+
+  if (input.months) {
+    next.setUTCMonth(next.getUTCMonth() + input.months);
+  }
+
+  return next;
+}
+
 function getPlanAction(
   planId: SubscribePlanId,
   activePlan: CurrentPlan | null,
@@ -86,6 +113,106 @@ function getPlanAction(
   if (targetAmount > activeAmount) return { disabled: false, label: "Upgrade" };
   if (targetAmount < activeAmount) return { disabled: false, label: "Downgrade" };
   return { disabled: false, label: "Switch" };
+}
+
+function TestClockPanel() {
+  const utils = api.useUtils();
+  const queryClient = useQueryClient();
+  const testClock = useQuery({
+    queryFn: async () => paykitClient.getTestClock({}),
+    queryKey: testClockQueryKey,
+  });
+
+  const advanceClock = useMutation({
+    mutationFn: async (frozenTime: Date) => {
+      const result = await paykitClient.advanceTestClock({ frozenTime });
+      return result;
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Failed to advance test clock");
+    },
+    onSuccess: async () => {
+      toast.success("Advanced test clock");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: testClockQueryKey }),
+        utils.paykit.currentPlans.invalidate(),
+        utils.paykit.checkFeature.invalidate(),
+      ]);
+    },
+  });
+
+  const actions = testClock.data
+    ? [
+        {
+          frozenTime: advanceClockTime(testClock.data.frozenTime, { days: 7 }),
+          label: "+1 week",
+        },
+        {
+          frozenTime: advanceClockTime(testClock.data.frozenTime, {
+            months: 1,
+          }),
+          label: "+1 month",
+        },
+        {
+          frozenTime: advanceClockTime(testClock.data.frozenTime, {
+            months: 3,
+          }),
+          label: "+3 months",
+        },
+      ]
+    : [];
+
+  return (
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          Test clock
+          {testClock.data ? <Badge variant="outline">{testClock.data.status}</Badge> : null}
+        </CardTitle>
+        <CardDescription>
+          Advance the logged-in customer through Stripe billing cycles without leaving the demo.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {testClock.isLoading ? (
+          <>
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-9 w-full" />
+          </>
+        ) : testClock.error ? (
+          <p className="text-destructive text-sm">
+            {testClock.error instanceof Error
+              ? testClock.error.message
+              : "Failed to load test clock"}
+          </p>
+        ) : testClock.data ? (
+          <>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <span className="text-lg font-semibold">
+                {formatDateTime(testClock.data.frozenTime)}
+              </span>
+              <span className="text-muted-foreground text-sm">Stripe time</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {actions.map((action) => (
+                <Button
+                  key={action.label}
+                  size="sm"
+                  variant="outline"
+                  disabled={advanceClock.isPending}
+                  onClick={() => advanceClock.mutate(action.frozenTime)}
+                >
+                  {action.label}
+                </Button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="text-muted-foreground text-sm">No test clock available.</p>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 export function SubscribePanel() {
@@ -184,6 +311,8 @@ export function SubscribePanel() {
           <p className="text-muted-foreground text-sm">No active plan.</p>
         )}
       </section>
+
+      <TestClockPanel />
 
       <Separator />
 

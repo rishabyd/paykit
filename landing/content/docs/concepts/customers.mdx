@@ -1,0 +1,78 @@
+---
+title: Customers
+description: Sync your app's billing identity into PayKit and keep provider mappings internal.
+---
+
+A customer is your app's user or billing entity. It can be a user ID, an org ID, or any string that uniquely identifies who's paying. PayKit maps it to the underlying provider customer ID internally, so your app never has to think about Stripe IDs.
+
+## Creating customers
+
+`upsertCustomer` creates the customer if they don't exist, or updates their details if they do.
+
+```ts
+await paykit.upsertCustomer({
+  id: "user_123",
+  email: "jane@example.com",
+  name: "Jane Doe",
+});
+```
+
+If a default plan is configured, newly created customers are automatically subscribed to it. You don't need to call `subscribe` separately for first-time users.
+
+## Getting a customer
+
+`getCustomer` returns the customer along with their active subscriptions and entitlements.
+
+```ts
+const customer = await paykit.getCustomer({ id: "user_123" });
+
+// customer.subscriptions: active subscriptions with planId, status, period dates
+// customer.entitlements:  feature balances keyed by feature ID
+```
+
+`subscriptions` is an array of `{ planId, status, cancelAtPeriodEnd, currentPeriodStart, currentPeriodEnd }`. `entitlements` is a record keyed by feature ID with `{ balance, limit, usage, unlimited, nextResetAt }`.
+
+## Listing customers
+
+`listCustomers` returns a paginated list. You can filter by plan to find everyone on a specific tier.
+
+```ts
+const { data, total, hasMore } = await paykit.listCustomers({
+  limit: 50,
+  offset: 0,
+  planIds: ["pro", "ultra"],
+});
+```
+
+## Deleting customers
+
+`deleteCustomer` removes the customer from PayKit and cancels any active subscriptions at the provider.
+
+```ts
+await paykit.deleteCustomer({ id: "user_123" });
+```
+
+## Customer identification (client)
+
+When requests come in over HTTP, PayKit needs to know which customer is making the call. The `identify` option on `createPayKit` resolves the authenticated customer from the incoming request.
+
+```ts title="paykit.ts"
+export const paykit = createPayKit({
+  // ...
+  identify: async (request) => {
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (!session) return null;
+    return {
+      customerId: session.user.id,
+      email: session.user.email,
+      name: session.user.name,
+    };
+  },
+});
+```
+
+`identify` is required if you're using the client SDK or the built-in HTTP router. If it returns `null`, the request is treated as unauthenticated and rejected.
+
+<Callout type="warn">
+  When requests go through the HTTP router, `identify()` is the trust boundary. Any explicitly passed `customerId` must match what `identify()` returns. PayKit will reject mismatches.
+</Callout>

@@ -9,11 +9,7 @@
     "flows",
     "---Providers---",
     "providers",
-    "---Databases---",
-    "databases",
-    "---Integrations---",
-    "integrations",
-    "---Guides---",
-    "guides"
+    "---Plugins---",
+    "plugins"
   ]
 }

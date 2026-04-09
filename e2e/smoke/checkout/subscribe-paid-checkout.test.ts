@@ -5,6 +5,7 @@ import {
   createTestPayKit,
   dumpStateOnFailure,
   expectProduct,
+  expectSingleActivePlanInGroup,
   expectSubscription,
   type TestPayKit,
   waitForWebhook,
@@ -17,10 +18,13 @@ describe("subscribe-paid-checkout: free → pro via checkout (manual)", () => {
   beforeAll(async () => {
     t = await createTestPayKit();
     // No payment method — will go through checkout
-    const customer = await createTestCustomer(t, {
-      id: "test_checkout",
-      email: "checkout@test.com",
-      name: "Checkout Test",
+    const customer = await createTestCustomer({
+      t,
+      customer: {
+        id: "test_checkout",
+        email: "checkout@test.com",
+        name: "Checkout Test",
+      },
     });
     customerId = customer.customerId;
   });
@@ -47,19 +51,41 @@ describe("subscribe-paid-checkout: free → pro via checkout (manual)", () => {
       console.log("\n\n  ▶ Complete checkout at:\n  " + result.paymentUrl + "\n");
 
       // Wait for checkout.completed webhook (manual completion required)
-      await waitForWebhook(t.database, "checkout.completed", {
+      await waitForWebhook({
+        database: t.database,
+        eventType: "checkout.completed",
         after: beforeCheckout,
         timeout: 120_000,
       });
 
       // Pro is active
-      await expectProduct(t.database, customerId, "pro", { status: "active", hasPeriodEnd: true });
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "pro",
+        expected: { status: "active", hasPeriodEnd: true },
+      });
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "pro",
+      });
 
       // Free is ended
-      await expectProduct(t.database, customerId, "free", { status: "ended" });
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "free",
+        expected: { status: "ended" },
+      });
 
       // Subscription exists
-      await expectSubscription(t.database, customerId, { status: "active" });
+      await expectSubscription({
+        database: t.database,
+        customerId,
+        expected: { status: "active" },
+      });
     } catch (error) {
       await dumpStateOnFailure(t.database, t.dbPath);
       throw error;
