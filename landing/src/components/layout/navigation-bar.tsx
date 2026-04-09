@@ -132,7 +132,7 @@ export function NavigationBar({ stars }: { stars: number | null }) {
           transition={{ duration: 0.28, delay: 0.04, ease: "easeOut" }}
           className="bg-background pointer-events-auto relative hidden w-full items-stretch justify-center border-b lg:flex"
         >
-          <div className="relative mx-auto w-full max-w-[76-rem]">
+          <div className="relative mx-auto w-full max-w-[76rem]">
             <div className="hidden min-[76rem]:block">
               <DashedLine orientation="vertical" />
             </div>
