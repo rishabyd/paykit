@@ -5,8 +5,9 @@ import {
   createTestPayKit,
   dumpStateOnFailure,
   expectProduct,
+  expectSingleActivePlanInGroup,
+  expectSingleScheduledPlanInGroup,
   type TestPayKit,
-  waitForWebhook,
 } from "../setup";
 
 describe("cancel-then-upgrade: pro → free (scheduled) → ultra (upgrade)", () => {
@@ -15,29 +16,28 @@ describe("cancel-then-upgrade: pro → free (scheduled) → ultra (upgrade)", ()
 
   beforeAll(async () => {
     t = await createTestPayKit();
-    const customer = await createTestCustomerWithPM(t, {
-      id: "test_cancel_upgrade",
-      email: "cancel-upgrade@test.com",
-      name: "Cancel Then Upgrade Test",
+    const customer = await createTestCustomerWithPM({
+      t,
+      customer: {
+        id: "test_cancel_upgrade",
+        email: "cancel-upgrade@test.com",
+        name: "Cancel Then Upgrade Test",
+      },
     });
     customerId = customer.customerId;
 
     // Setup: subscribe to Pro, then schedule downgrade to Free
-    const b1 = new Date();
     await t.paykit.subscribe({
       customerId,
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
 
-    const b2 = new Date();
     await t.paykit.subscribe({
       customerId,
       planId: "free",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.database, "subscription.updated", { after: b2 });
   });
 
   afterAll(async () => {
@@ -47,26 +47,56 @@ describe("cancel-then-upgrade: pro → free (scheduled) → ultra (upgrade)", ()
   it("upgrading while cancellation is pending cancels the downgrade and activates the new plan", async () => {
     try {
       // Verify precondition
-      await expectProduct(t.database, customerId, "pro", { status: "active", canceled: true });
-      await expectProduct(t.database, customerId, "free", { status: "scheduled" });
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "pro",
+        expected: { status: "active", canceled: true },
+      });
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "pro",
+      });
+      await expectSingleScheduledPlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "free",
+      });
 
       // Action: upgrade to Ultra
-      const beforeUpgrade = new Date();
       await t.paykit.subscribe({
         customerId,
         planId: "ultra",
         successUrl: "https://example.com/success",
       });
-      await waitForWebhook(t.database, "subscription.updated", { after: beforeUpgrade });
 
       // Ultra is active
-      await expectProduct(t.database, customerId, "ultra", {
-        status: "active",
-        hasPeriodEnd: true,
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "ultra",
+        expected: {
+          status: "active",
+          hasPeriodEnd: true,
+        },
+      });
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "ultra",
       });
 
       // Pro is ended
-      await expectProduct(t.database, customerId, "pro", { status: "ended" });
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "pro",
+        expected: { status: "ended" },
+      });
 
       // TODO: scheduled Free should be deleted on upgrade, but the subscribe
       // flow computes "switch" instead of "upgrade" when the current subscription

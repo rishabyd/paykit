@@ -8,6 +8,7 @@ import {
   createTestPayKit,
   dumpStateOnFailure,
   expectProduct,
+  expectSingleActivePlanInGroup,
   type TestPayKit,
   waitForWebhook,
 } from "../setup";
@@ -18,29 +19,28 @@ describe("resubscribe-after-cancel: checkout after full cancellation", () => {
 
   beforeAll(async () => {
     t = await createTestPayKit();
-    const customer = await createTestCustomerWithPM(t, {
-      id: "test_resub",
-      email: "resub@test.com",
-      name: "Resubscribe Test",
+    const customer = await createTestCustomerWithPM({
+      t,
+      customer: {
+        id: "test_resub",
+        email: "resub@test.com",
+        name: "Resubscribe Test",
+      },
     });
     customerId = customer.customerId;
 
     // Setup: subscribe Pro → cancel to Free → advance clock (full cancellation)
-    const b1 = new Date();
     await t.paykit.subscribe({
       customerId,
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
 
-    const b2 = new Date();
     await t.paykit.subscribe({
       customerId,
       planId: "free",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.database, "subscription.updated", { after: b2 });
 
     // Advance past period end so subscription fully cancels
     const subRows = await t.database
@@ -51,7 +51,11 @@ describe("resubscribe-after-cancel: checkout after full cancellation", () => {
       .limit(1);
     const periodEnd = new Date(subRows[0]!.currentPeriodEndAt as unknown as string);
     const advanceTo = new Date(periodEnd.getTime() + 86_400_000);
-    await advanceTestClock(t, customerId, advanceTo.toISOString().split("T")[0]!);
+    await advanceTestClock({
+      t,
+      customerId,
+      frozenTime: advanceTo,
+    });
 
     // Wait for Free to activate
     for (let i = 0; i < 60; i++) {
@@ -97,13 +101,26 @@ describe("resubscribe-after-cancel: checkout after full cancellation", () => {
       console.log("\n\n  ▶ Complete checkout at:\n  " + result.paymentUrl + "\n");
 
       // Wait for manual checkout completion
-      await waitForWebhook(t.database, "checkout.completed", {
+      await waitForWebhook({
+        database: t.database,
+        eventType: "checkout.completed",
         after: beforeCheckout,
         timeout: 120_000,
       });
 
       // Pro is active again
-      await expectProduct(t.database, customerId, "pro", { status: "active", hasPeriodEnd: true });
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "pro",
+        expected: { status: "active", hasPeriodEnd: true },
+      });
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "pro",
+      });
     } catch (error) {
       await dumpStateOnFailure(t.database, t.dbPath);
       throw error;

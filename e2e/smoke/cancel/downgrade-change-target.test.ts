@@ -6,8 +6,9 @@ import {
   dumpStateOnFailure,
   expectProduct,
   expectProductNotPresent,
+  expectSingleActivePlanInGroup,
+  expectSingleScheduledPlanInGroup,
   type TestPayKit,
-  waitForWebhook,
 } from "../setup";
 
 describe("downgrade-change-target: ultra → pro (scheduled) → free (change target)", () => {
@@ -16,38 +17,35 @@ describe("downgrade-change-target: ultra → pro (scheduled) → free (change ta
 
   beforeAll(async () => {
     t = await createTestPayKit();
-    const customer = await createTestCustomerWithPM(t, {
-      id: "test_change_target",
-      email: "change-target@test.com",
-      name: "Change Target Test",
+    const customer = await createTestCustomerWithPM({
+      t,
+      customer: {
+        id: "test_change_target",
+        email: "change-target@test.com",
+        name: "Change Target Test",
+      },
     });
     customerId = customer.customerId;
 
     // Setup: subscribe Pro → upgrade Ultra
-    const b1 = new Date();
     await t.paykit.subscribe({
       customerId,
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
 
-    const b2 = new Date();
     await t.paykit.subscribe({
       customerId,
       planId: "ultra",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.database, "subscription.updated", { after: b2 });
 
     // Schedule downgrade to Pro
-    const b3 = new Date();
     await t.paykit.subscribe({
       customerId,
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.database, "subscription.updated", { after: b3 });
   });
 
   afterAll(async () => {
@@ -57,24 +55,58 @@ describe("downgrade-change-target: ultra → pro (scheduled) → free (change ta
   it("changing the scheduled downgrade target replaces the old scheduled product", async () => {
     try {
       // Verify precondition: Ultra canceling, Pro scheduled
-      await expectProduct(t.database, customerId, "ultra", { status: "active", canceled: true });
-      await expectProduct(t.database, customerId, "pro", { status: "scheduled" });
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "ultra",
+        expected: { status: "active", canceled: true },
+      });
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "ultra",
+      });
+      await expectSingleScheduledPlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "pro",
+      });
 
       // Action: change downgrade target to Free instead
-      const beforeChange = new Date();
       await t.paykit.subscribe({
         customerId,
         planId: "free",
         successUrl: "https://example.com/success",
       });
-      await waitForWebhook(t.database, "subscription.updated", { after: beforeChange });
 
       // Ultra still canceling
-      await expectProduct(t.database, customerId, "ultra", { status: "active", canceled: true });
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "ultra",
+        expected: { status: "active", canceled: true },
+      });
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "ultra",
+      });
 
       // Pro scheduled is gone, Free is now scheduled
-      await expectProductNotPresent(t.database, customerId, "pro");
-      await expectProduct(t.database, customerId, "free", { status: "scheduled" });
+      await expectProductNotPresent({
+        database: t.database,
+        customerId,
+        planId: "pro",
+      });
+      await expectSingleScheduledPlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "free",
+      });
     } catch (error) {
       await dumpStateOnFailure(t.database, t.dbPath);
       throw error;

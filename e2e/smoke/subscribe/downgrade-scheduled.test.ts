@@ -5,8 +5,9 @@ import {
   createTestPayKit,
   dumpStateOnFailure,
   expectProduct,
+  expectSingleActivePlanInGroup,
+  expectSingleScheduledPlanInGroup,
   type TestPayKit,
-  waitForWebhook,
 } from "../setup";
 
 describe("downgrade-scheduled: ultra → pro", () => {
@@ -15,29 +16,28 @@ describe("downgrade-scheduled: ultra → pro", () => {
 
   beforeAll(async () => {
     t = await createTestPayKit();
-    const customer = await createTestCustomerWithPM(t, {
-      id: "test_downgrade",
-      email: "downgrade@test.com",
-      name: "Downgrade Test",
+    const customer = await createTestCustomerWithPM({
+      t,
+      customer: {
+        id: "test_downgrade",
+        email: "downgrade@test.com",
+        name: "Downgrade Test",
+      },
     });
     customerId = customer.customerId;
 
     // Setup: subscribe to Pro then upgrade to Ultra
-    const b1 = new Date();
     await t.paykit.subscribe({
       customerId,
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
 
-    const b2 = new Date();
     await t.paykit.subscribe({
       customerId,
       planId: "ultra",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.database, "subscription.updated", { after: b2 });
   });
 
   afterAll(async () => {
@@ -46,24 +46,36 @@ describe("downgrade-scheduled: ultra → pro", () => {
 
   it("downgrading to a lower tier schedules the change at period end", async () => {
     try {
-      const beforeDowngrade = new Date();
-
       await t.paykit.subscribe({
         customerId,
         planId: "pro",
         successUrl: "https://example.com/success",
       });
 
-      await waitForWebhook(t.database, "subscription.updated", { after: beforeDowngrade });
-
       // Ultra is still active but marked as canceled
-      await expectProduct(t.database, customerId, "ultra", {
-        status: "active",
-        canceled: true,
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "ultra",
+        expected: {
+          status: "active",
+          canceled: true,
+        },
+      });
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "ultra",
       });
 
       // Pro is scheduled for activation at period end
-      await expectProduct(t.database, customerId, "pro", { status: "scheduled" });
+      await expectSingleScheduledPlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "pro",
+      });
     } catch (error) {
       await dumpStateOnFailure(t.database, t.dbPath);
       throw error;

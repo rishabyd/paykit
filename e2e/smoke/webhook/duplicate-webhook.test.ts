@@ -1,4 +1,4 @@
-import { and, count, desc, eq } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { subscription, webhookEvent } from "../../../packages/paykit/src/database/schema";
@@ -6,8 +6,13 @@ import {
   createTestCustomerWithPM,
   createTestPayKit,
   dumpStateOnFailure,
+  expectExactMeteredBalance,
+  expectNoScheduledPlanInGroup,
   expectProduct,
+  expectSingleActivePlanInGroup,
+  replayWebhookRequest,
   type TestPayKit,
+  waitForForwardedWebhookRequest,
   waitForWebhook,
 } from "../setup";
 
@@ -17,21 +22,15 @@ describe("duplicate-webhook: same event delivered twice", () => {
 
   beforeAll(async () => {
     t = await createTestPayKit();
-    const customer = await createTestCustomerWithPM(t, {
-      id: "test_dup_webhook",
-      email: "dup-webhook@test.com",
-      name: "Duplicate Webhook Test",
+    const customer = await createTestCustomerWithPM({
+      t,
+      customer: {
+        id: "test_dup_webhook",
+        email: "dup-webhook@test.com",
+        name: "Duplicate Webhook Test",
+      },
     });
     customerId = customer.customerId;
-
-    // Setup: subscribe to Pro
-    const b1 = new Date();
-    await t.paykit.subscribe({
-      customerId,
-      planId: "pro",
-      successUrl: "https://example.com/success",
-    });
-    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
   });
 
   afterAll(async () => {
@@ -40,53 +39,73 @@ describe("duplicate-webhook: same event delivered twice", () => {
 
   it("processing the same webhook event twice is idempotent", async () => {
     try {
-      // Get the last processed webhook event
-      const eventRows = await t.database
-        .select({
-          providerEventId: webhookEvent.providerEventId,
-          type: webhookEvent.type,
-        })
-        .from(webhookEvent)
-        .where(
-          and(eq(webhookEvent.type, "subscription.updated"), eq(webhookEvent.status, "processed")),
-        )
-        .orderBy(desc(webhookEvent.receivedAt))
-        .limit(1);
-      const lastEvent = eventRows[0];
-      expect(lastEvent).toBeDefined();
+      const beforeSubscribe = new Date();
 
-      // Count current webhook events
-      const countBeforeRows = await t.database.select({ count: count() }).from(webhookEvent);
-      const webhookCountBefore = countBeforeRows[0]?.count ?? 0;
+      await t.paykit.subscribe({
+        customerId,
+        planId: "pro",
+        successUrl: "https://example.com/success",
+      });
 
-      // Count customer products
-      const productCountBeforeRows = await t.database
+      await waitForWebhook({
+        after: beforeSubscribe,
+        database: t.database,
+        eventType: "subscription.updated",
+      });
+      const forwardedRequest = await waitForForwardedWebhookRequest({
+        after: beforeSubscribe,
+        eventType: "customer.subscription.updated",
+        requests: t.webhookRequests,
+      });
+
+      const webhookCountBeforeRows = await t.database.select({ count: count() }).from(webhookEvent);
+      const webhookCountBefore = webhookCountBeforeRows[0]?.count ?? 0;
+
+      const subscriptionCountBeforeRows = await t.database
         .select({ count: count() })
         .from(subscription)
         .where(eq(subscription.customerId, customerId));
-      const productCountBefore = productCountBeforeRows[0]?.count ?? 0;
+      const subscriptionCountBefore = subscriptionCountBeforeRows[0]?.count ?? 0;
 
-      // Replay the same webhook by calling handleWebhook with the same event ID
-      // The idempotency check in beginWebhookEvent should skip it
-      // We simulate this by checking that the DB state doesn't change
-      // after the duplicate would have been processed
+      await replayWebhookRequest({ request: forwardedRequest });
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
 
-      // Pro should still be active (no side effects from duplicate)
-      await expectProduct(t.database, customerId, "pro", { status: "active" });
+      await expectProduct({
+        database: t.database,
+        customerId,
+        planId: "pro",
+        expected: { status: "active" },
+      });
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "pro",
+      });
+      await expectNoScheduledPlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+      });
+      await expectExactMeteredBalance({
+        customerId,
+        featureId: "messages",
+        limit: 500,
+        paykit: t.paykit,
+        remaining: 500,
+      });
 
-      // No new webhook events created (duplicate was skipped)
-      const countAfterRows = await t.database.select({ count: count() }).from(webhookEvent);
-      const webhookCountAfter = countAfterRows[0]?.count ?? 0;
+      const webhookCountAfterRows = await t.database.select({ count: count() }).from(webhookEvent);
+      const webhookCountAfter = webhookCountAfterRows[0]?.count ?? 0;
 
-      // No new products created
-      const productCountAfterRows = await t.database
+      const subscriptionCountAfterRows = await t.database
         .select({ count: count() })
         .from(subscription)
         .where(eq(subscription.customerId, customerId));
-      const productCountAfter = productCountAfterRows[0]?.count ?? 0;
+      const subscriptionCountAfter = subscriptionCountAfterRows[0]?.count ?? 0;
 
       expect(webhookCountAfter).toBe(webhookCountBefore);
-      expect(productCountAfter).toBe(productCountBefore);
+      expect(subscriptionCountAfter).toBe(subscriptionCountBefore);
     } catch (error) {
       await dumpStateOnFailure(t.database, t.dbPath);
       throw error;

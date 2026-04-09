@@ -4,8 +4,8 @@ import {
   createTestCustomerWithPM,
   createTestPayKit,
   dumpStateOnFailure,
+  expectExactMeteredBalance,
   type TestPayKit,
-  waitForWebhook,
 } from "../setup";
 
 describe("check-metered: metered feature balance and usage reporting", () => {
@@ -14,21 +14,22 @@ describe("check-metered: metered feature balance and usage reporting", () => {
 
   beforeAll(async () => {
     t = await createTestPayKit();
-    const customer = await createTestCustomerWithPM(t, {
-      id: "test_check_metered",
-      email: "check-metered@test.com",
-      name: "Check Metered Test",
+    const customer = await createTestCustomerWithPM({
+      t,
+      customer: {
+        id: "test_check_metered",
+        email: "check-metered@test.com",
+        name: "Check Metered Test",
+      },
     });
     customerId = customer.customerId;
 
     // Subscribe to Pro (500 messages/month)
-    const b1 = new Date();
     await t.paykit.subscribe({
       customerId,
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
   });
 
   afterAll(async () => {
@@ -37,12 +38,13 @@ describe("check-metered: metered feature balance and usage reporting", () => {
 
   it("check returns correct balance, report decrements it", async () => {
     try {
-      // Check initial balance
-      const initial = await t.paykit.check({ customerId, featureId: "messages" });
-      expect(initial.allowed).toBe(true);
-      expect(initial.balance).not.toBeNull();
-      expect(initial.balance!.remaining).toBe(500);
-      expect(initial.balance!.unlimited).toBe(false);
+      await expectExactMeteredBalance({
+        paykit: t.paykit,
+        customerId,
+        featureId: "messages",
+        limit: 500,
+        remaining: 500,
+      });
 
       // Report usage (consume 10)
       const report1 = await t.paykit.report({ customerId, featureId: "messages", amount: 10 });
@@ -55,17 +57,26 @@ describe("check-metered: metered feature balance and usage reporting", () => {
       expect(report2.balance!.remaining).toBe(440);
 
       // Check reflects the usage
-      const afterUsage = await t.paykit.check({ customerId, featureId: "messages" });
-      expect(afterUsage.allowed).toBe(true);
-      expect(afterUsage.balance!.remaining).toBe(440);
+      await expectExactMeteredBalance({
+        paykit: t.paykit,
+        customerId,
+        featureId: "messages",
+        limit: 500,
+        remaining: 440,
+      });
 
       // Try to consume more than remaining
       const overReport = await t.paykit.report({ customerId, featureId: "messages", amount: 500 });
       expect(overReport.success).toBe(false);
 
       // Balance unchanged after failed report
-      const afterFailed = await t.paykit.check({ customerId, featureId: "messages" });
-      expect(afterFailed.balance!.remaining).toBe(440);
+      await expectExactMeteredBalance({
+        paykit: t.paykit,
+        customerId,
+        featureId: "messages",
+        limit: 500,
+        remaining: 440,
+      });
     } catch (error) {
       await dumpStateOnFailure(t.database, t.dbPath);
       throw error;

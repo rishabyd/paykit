@@ -6,8 +6,10 @@ import {
   createTestCustomerWithPM,
   createTestPayKit,
   dumpStateOnFailure,
+  expectExactMeteredBalance,
+  expectNoScheduledPlanInGroup,
+  expectSingleActivePlanInGroup,
   type TestPayKit,
-  waitForWebhook,
 } from "../setup";
 
 describe("same-plan-noop: pro → pro", () => {
@@ -16,21 +18,22 @@ describe("same-plan-noop: pro → pro", () => {
 
   beforeAll(async () => {
     t = await createTestPayKit();
-    const customer = await createTestCustomerWithPM(t, {
-      id: "test_noop",
-      email: "noop@test.com",
-      name: "Noop Test",
+    const customer = await createTestCustomerWithPM({
+      t,
+      customer: {
+        id: "test_noop",
+        email: "noop@test.com",
+        name: "Noop Test",
+      },
     });
     customerId = customer.customerId;
 
     // Setup: subscribe to Pro
-    const b1 = new Date();
     await t.paykit.subscribe({
       customerId,
       planId: "pro",
       successUrl: "https://example.com/success",
     });
-    await waitForWebhook(t.database, "subscription.updated", { after: b1 });
   });
 
   afterAll(async () => {
@@ -89,6 +92,24 @@ describe("same-plan-noop: pro → pro", () => {
         .where(eq(invoice.customerId, customerId));
       const invoiceCountAfter = invoicesAfterRows[0]?.count ?? 0;
       expect(invoiceCountAfter).toBe(invoiceCountBefore);
+      await expectSingleActivePlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+        planId: "pro",
+      });
+      await expectNoScheduledPlanInGroup({
+        database: t.database,
+        customerId,
+        group: "base",
+      });
+      await expectExactMeteredBalance({
+        customerId,
+        featureId: "messages",
+        limit: 500,
+        paykit: t.paykit,
+        remaining: 500,
+      });
     } catch (error) {
       await dumpStateOnFailure(t.database, t.dbPath);
       throw error;

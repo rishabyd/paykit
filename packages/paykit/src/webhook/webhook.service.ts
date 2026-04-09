@@ -43,7 +43,9 @@ async function beginWebhookEvent(
     });
     return true;
   } catch (error: unknown) {
-    const code = (error as { code?: string }).code;
+    const code =
+      (error as { code?: string; cause?: { code?: string } }).code ??
+      (error as { cause?: { code?: string } }).cause?.code;
     if (code !== "23505") {
       throw error;
     }
