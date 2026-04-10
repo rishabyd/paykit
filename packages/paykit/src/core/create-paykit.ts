@@ -1,4 +1,7 @@
+import { Pool } from "pg";
+
 import { createPayKitRouter, getApi } from "../api/methods";
+import { getPendingMigrationCount } from "../database/index";
 import { dryRunSyncProducts } from "../product/product-sync.service";
 import type { PayKitAPI, PayKitInstance } from "../types/instance";
 import type { PayKitOptions } from "../types/options";
@@ -14,21 +17,42 @@ export function isPayKitInstance(value: unknown): value is PayKitInstance {
   );
 }
 
-async function initContext(options: PayKitOptions): Promise<PayKitContext> {
-  const ctx = await createContext(options);
+async function runDevChecks(ctx: PayKitContext, pool: Pool): Promise<void> {
+  try {
+    await pool.query("SELECT 1");
+  } catch {
+    ctx.logger.error("Could not connect to the database. Check your connection settings.");
+    return;
+  }
 
-  if (process.env.NODE_ENV !== "production" && !process.env.PAYKIT_CLI) {
-    try {
-      const results = await dryRunSyncProducts(ctx);
+  await Promise.allSettled([
+    getPendingMigrationCount(pool).then((count) => {
+      if (count > 0) {
+        ctx.logger.error(
+          `${count} pending migration${count === 1 ? "" : "s"}. Run \`paykitjs push\` to apply.`,
+        );
+      }
+    }),
+    dryRunSyncProducts(ctx).then((results) => {
       const outOfSync = results.filter((r) => r.action !== "unchanged");
       if (outOfSync.length > 0) {
         ctx.logger.error(
-          `${outOfSync.length} plan(s) out of sync: ${outOfSync.map((r) => r.id).join(", ")}. Run \`paykitjs push\` to update.`,
+          `${outOfSync.length} product${outOfSync.length === 1 ? "" : "s"} out of sync: ${outOfSync.map((r) => r.id).join(", ")}. Run \`paykitjs push\` to update.`,
         );
       }
-    } catch {
-      ctx.logger.debug("Skipped plan sync check (database may not be initialized yet)");
-    }
+    }),
+  ]);
+}
+
+async function initContext(options: PayKitOptions): Promise<PayKitContext> {
+  const pool =
+    typeof options.database === "string"
+      ? new Pool({ connectionString: options.database })
+      : options.database;
+  const ctx = await createContext({ ...options, database: pool });
+
+  if (process.env.NODE_ENV !== "production" && !process.env.PAYKIT_CLI) {
+    runDevChecks(ctx, pool).catch(() => {});
   }
 
   return ctx;
