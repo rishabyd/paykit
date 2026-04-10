@@ -14,7 +14,7 @@ import {
 } from "@/components/docs/docs-icons";
 import { SidebarCategoryAccordion } from "@/components/docs/sidebar-category-accordion";
 import { SidebarCollapseButton } from "@/components/docs/sidebar-collapse-button";
-import { LogoLockup } from "@/components/icons/logo";
+import { Wordmark } from "@/components/icons/wordmark";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -182,7 +182,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           children: <SidebarCollapseButton />,
           title: (
             <div className="flew-row flex items-center">
-              <LogoLockup className="h-4.5" />
+              <Wordmark className="h-4.5" />
               {VERSION_TEXT && (
                 <Badge
                   className="text-muted-foreground mb-0.5 ml-3 rounded-md px-1"

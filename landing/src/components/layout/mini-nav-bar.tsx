@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import Link from "next/link";
 
-import { LogoLockup } from "@/components/icons/logo";
+import { Wordmark } from "@/components/icons/wordmark";
 
 import { DashedLine } from "./section";
 
@@ -24,7 +24,7 @@ export function MiniNavBar() {
         </div>
         <div className="flex items-center px-12 py-3.5">
           <Link href="/">
-            <LogoLockup className="h-5" />
+            <Wordmark className="h-5" />
           </Link>
         </div>
       </div>

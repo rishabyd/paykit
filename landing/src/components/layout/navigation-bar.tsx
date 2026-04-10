@@ -7,7 +7,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { LogoLockup } from "@/components/icons/logo";
+import { Wordmark } from "@/components/icons/wordmark";
+import { BrandMenu } from "@/components/landing/brand-menu";
 import { DashedLine } from "@/components/layout/section";
 import { Button } from "@/components/ui/button";
 import { URLs } from "@/lib/consts";
@@ -104,16 +105,16 @@ export function NavigationBar({ stars }: { stars: number | null }) {
 
   return (
     <>
-      <div className="pointer-events-none fixed top-0 right-0 left-0 z-[99] flex items-start [scrollbar-gutter:stable]">
+      <div className="pointer-events-none fixed top-0 right-0 left-0 z-99 flex items-start [scrollbar-gutter:stable]">
         {/* Mobile */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.28, ease: "easeOut" }}
-          className="bg-background border-foreground/[0.06] pointer-events-auto flex w-full items-center justify-between border-b lg:hidden"
+          className="bg-background border-foreground/6 pointer-events-auto flex w-full items-center justify-between border-b lg:hidden"
         >
           <Link href="/" className="flex items-center gap-1 px-4 py-3">
-            <LogoLockup className="h-4" />
+            <Wordmark className="h-4" />
           </Link>
           <button
             type="button"
@@ -140,9 +141,7 @@ export function NavigationBar({ stars }: { stars: number | null }) {
             </div>
             <div className="flex items-stretch justify-between px-12">
               {/* Logo */}
-              <Link href="/" className="relative z-10 flex shrink-0 items-center py-3.5">
-                <LogoLockup className="h-5" />
-              </Link>
+              <BrandMenu />
 
               {/* Center tabs */}
               <div className="absolute inset-0 flex items-stretch justify-center">
@@ -158,7 +157,7 @@ export function NavigationBar({ stars }: { stars: number | null }) {
                       >
                         <NavLink
                           item={item}
-                          className={`${tabBase} border-foreground/[0.06] border-r ${active ? tabActive : tabInactive}`}
+                          className={`${tabBase} border-foreground/6 border-r ${active ? tabActive : tabInactive}`}
                         >
                           <span className={`${labelBase} ${active ? "text-foreground" : ""}`}>
                             {item.name}
@@ -198,13 +197,13 @@ export function NavigationBar({ stars }: { stars: number | null }) {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 4 }}
                           transition={{ duration: 0.15 }}
-                          className="bg-background border-foreground/[0.08] absolute top-full left-1/2 z-50 mt-px min-w-[180px] -translate-x-1/2 border py-1 shadow-lg"
+                          className="bg-background border-foreground/8 absolute top-full left-1/2 z-50 mt-px min-w-45 -translate-x-1/2 border py-1 shadow-lg"
                         >
                           {dropdownLinks.map((link) => (
                             <NavLink
                               key={link.name}
                               item={link}
-                              className="text-foreground/60 hover:text-foreground hover:bg-foreground/[0.03] flex items-center justify-between px-4 py-2 text-sm transition-colors"
+                              className="text-foreground/60 hover:text-foreground hover:bg-foreground/3 flex items-center justify-between px-4 py-2 text-sm transition-colors"
                               onClick={() => setLinksOpen(false)}
                             >
                               {link.name}
@@ -246,9 +245,9 @@ export function NavigationBar({ stars }: { stars: number | null }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="bg-background/95 pointer-events-auto fixed inset-0 z-[98] backdrop-blur-sm lg:hidden"
+            className="bg-background/95 pointer-events-auto fixed inset-0 z-98 backdrop-blur-sm lg:hidden"
           >
-            <div className="flex h-full flex-col overflow-y-auto pt-[52px]">
+            <div className="flex h-full flex-col overflow-y-auto pt-13">
               {mobileLinks.map((item, i) => (
                 <motion.div
                   key={item.name}
@@ -258,10 +257,8 @@ export function NavigationBar({ stars }: { stars: number | null }) {
                 >
                   <NavLink
                     item={item}
-                    className={`border-foreground/[0.06] flex items-center gap-2.5 border-b px-5 py-3.5 transition-colors ${
-                      isActive(item.path || item.href)
-                        ? "bg-foreground/[0.04]"
-                        : "hover:bg-foreground/[0.03]"
+                    className={`border-foreground/6 flex items-center gap-2.5 border-b px-5 py-3.5 transition-colors ${
+                      isActive(item.path || item.href) ? "bg-foreground/4" : "hover:bg-foreground/3"
                     }`}
                     onClick={() => setMobileMenuOpen(false)}
                   >
