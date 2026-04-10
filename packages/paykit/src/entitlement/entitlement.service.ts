@@ -81,6 +81,24 @@ function aggregateBalance(rows: ActiveEntitlementRow[]): EntitlementBalance | nu
   return { limit, remaining, resetAt, unlimited: false };
 }
 
+const sortRowsForConsumption = (rows: ActiveEntitlementRow[]): ActiveEntitlementRow[] => {
+  return [...rows].sort((left, right) => {
+    if (left.nextResetAt && right.nextResetAt) {
+      return left.nextResetAt.getTime() - right.nextResetAt.getTime();
+    }
+
+    if (left.nextResetAt) {
+      return -1;
+    }
+
+    if (right.nextResetAt) {
+      return 1;
+    }
+
+    return left.id.localeCompare(right.id);
+  });
+};
+
 /** Fetch all active entitlements for a customer+feature, with product feature metadata. */
 async function getActiveEntitlements(
   db: PayKitDatabase,
@@ -194,27 +212,36 @@ export async function reportEntitlement(
     return { balance: aggregateBalance(rows), success: true };
   }
 
-  // Find the first entitlement with sufficient balance and decrement atomically.
-  // The WHERE balance >= $amount guard prevents over-decrementing under concurrency.
-  let deducted = false;
-  for (const row of rows) {
-    if (row.originalLimit === null || row.balance < amount) continue;
+  const totalBalance = rows.reduce((sum, row) => sum + row.balance, 0);
+  if (totalBalance < amount) {
+    return { balance: aggregateBalance(rows), success: false };
+  }
 
+  let remainingAmount = amount;
+  for (const row of sortRowsForConsumption(rows)) {
+    if (remainingAmount === 0) {
+      break;
+    }
+
+    if (row.originalLimit === null || row.balance <= 0) continue;
+
+    const deduction = Math.min(row.balance, remainingAmount);
     const result = await database
       .update(entitlement)
       .set({
-        balance: sql`${entitlement.balance} - ${amount}`,
+        balance: sql`${entitlement.balance} - ${deduction}`,
         updatedAt: new Date(),
       })
-      .where(and(eq(entitlement.id, row.id), sql`${entitlement.balance} >= ${amount}`))
+      .where(and(eq(entitlement.id, row.id), sql`${entitlement.balance} >= ${deduction}`))
       .returning({ balance: entitlement.balance });
 
-    if (result.length > 0) {
-      row.balance = result[0]!.balance!;
-      deducted = true;
-      break;
+    if (result.length === 0) {
+      return reportEntitlement(database, input);
     }
+
+    row.balance = result[0]!.balance!;
+    remainingAmount -= deduction;
   }
 
-  return { balance: aggregateBalance(rows), success: deducted };
+  return { balance: aggregateBalance(rows), success: remainingAmount === 0 };
 }
