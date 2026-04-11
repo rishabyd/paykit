@@ -108,7 +108,7 @@ export async function generateMetadata({ params }: DocsPageProps): Promise<Metad
       description: page.data.description,
       images: [
         {
-          url: new URL(`/api/og/${slug.join("/")}`, URLs.site),
+          url: `/api/og/${slug.join("/")}`,
           width: 1200,
           height: 600,
           alt: page.data.title,
@@ -118,7 +118,7 @@ export async function generateMetadata({ params }: DocsPageProps): Promise<Metad
     twitter: {
       title: page.data.title,
       description: page.data.description,
-      images: [new URL(`/api/og/${slug.join("/")}`, URLs.site)],
+      images: [`/api/og/${slug.join("/")}`],
     },
   };
 }
