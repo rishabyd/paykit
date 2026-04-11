@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   Layers,
   Monitor,
+  Package,
   ReceiptText,
   Repeat,
   Route,
@@ -67,7 +68,7 @@ const pageIcons = {
   "next js": <Server className="docs-category-icon size-3! shrink-0" />,
 
   "create a payment provider": <CreditCard className="docs-category-icon size-3! shrink-0" />,
-  "plans & features": <Layers className="docs-category-icon size-3! shrink-0" />,
+  "plans & features": <Package className="docs-category-icon size-3! shrink-0" />,
   customers: <Users className="docs-category-icon size-3! shrink-0" />,
   subscriptions: <Repeat className="docs-category-icon size-3! shrink-0" />,
   entitlements: <Shield className="docs-category-icon size-3! shrink-0" />,
