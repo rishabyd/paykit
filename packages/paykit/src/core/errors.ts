@@ -19,6 +19,7 @@ export const PAYKIT_ERROR_CODES = defineErrorCodes({
   FEATURE_UPSERT_FAILED: "Failed to upsert feature",
 
   PROVIDER_REQUIRED: "A provider is required",
+  PROVIDER_INVALID_CONFIG: "Provider config is invalid",
   PROVIDER_CUSTOMER_NOT_FOUND: "Customer not found in provider",
   PROVIDER_SESSION_INVALID: "Provider session did not include a URL",
   PROVIDER_SIGNATURE_MISSING: "Missing provider webhook signature",

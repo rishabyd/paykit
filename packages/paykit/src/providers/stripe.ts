@@ -4,6 +4,15 @@ import { PayKitError, PAYKIT_ERROR_CODES } from "../core/errors";
 import type { NormalizedWebhookEvent } from "../types/events";
 import type { ProviderTestClock, StripeProviderConfig, StripeRuntime } from "./provider";
 
+/**
+ * Stripe API version PayKit is tested against. Users can override via
+ * `stripe({ apiVersion })`, e.g. to opt into preview features.
+ */
+export const PAYKIT_STRIPE_API_VERSION = "2025-10-29.clover";
+
+/** Preview API version required to use Stripe Managed Payments. */
+const STRIPE_MANAGED_PAYMENTS_API_VERSION = "2026-03-04.preview";
+
 type StripeInvoiceWithExtras = StripeSdk.Invoice & {
   payment_intent?: StripeSdk.PaymentIntent | string | null;
   subscription?: StripeSdk.Subscription | string | null;
@@ -577,7 +586,9 @@ export function createStripeProvider(
     },
 
     async createSubscriptionCheckout(data) {
-      const sessionParams: StripeSdk.Checkout.SessionCreateParams = {
+      const sessionParams: StripeSdk.Checkout.SessionCreateParams & {
+        managed_payments?: { enabled: boolean };
+      } = {
         cancel_url: data.cancelUrl ?? data.successUrl,
         client_reference_id: data.providerCustomerId,
         customer: data.providerCustomerId,
@@ -586,6 +597,9 @@ export function createStripeProvider(
         mode: "subscription",
         success_url: data.successUrl,
       };
+      if (options.managedPayments) {
+        sessionParams.managed_payments = { enabled: true };
+      }
       const session = await client.checkout.sessions.create(sessionParams);
 
       if (!session.url) {
@@ -892,5 +906,16 @@ export function createStripeProvider(
 }
 
 export function createStripeRuntime(options: StripeProviderConfig): StripeRuntime {
-  return createStripeProvider(new StripeSdk(options.secretKey), options);
+  const apiVersion = options.apiVersion ?? PAYKIT_STRIPE_API_VERSION;
+  if (options.managedPayments && apiVersion !== STRIPE_MANAGED_PAYMENTS_API_VERSION) {
+    throw PayKitError.from(
+      "BAD_REQUEST",
+      PAYKIT_ERROR_CODES.PROVIDER_INVALID_CONFIG,
+      `stripe({ managedPayments: true }) requires apiVersion: "${STRIPE_MANAGED_PAYMENTS_API_VERSION}" (got "${apiVersion}"). Managed Payments is a Stripe preview feature; see https://docs.stripe.com/payments/managed-payments`,
+    );
+  }
+  const client = new StripeSdk(options.secretKey, {
+    apiVersion: apiVersion as StripeSdk.LatestApiVersion,
+  });
+  return createStripeProvider(client, options);
 }

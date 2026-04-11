@@ -151,6 +151,20 @@ export interface StripeProviderOptions {
   currency?: string;
   secretKey: string;
   webhookSecret: string;
+  /**
+   * Stripe API version to pin the SDK to. Defaults to `PAYKIT_STRIPE_API_VERSION`.
+   * Accepts preview versions (e.g. `"2026-03-04.preview"`) for opting into features
+   * like `managedPayments`.
+   */
+  apiVersion?: string;
+  /**
+   * Enable Stripe Managed Payments on subscription checkout sessions. Requires
+   * `apiVersion` to be set to a preview version that supports the feature
+   * (currently `"2026-03-04.preview"`).
+   *
+   * @see https://docs.stripe.com/payments/managed-payments
+   */
+  managedPayments?: boolean;
 }
 
 export interface StripeProviderConfig extends StripeProviderOptions {

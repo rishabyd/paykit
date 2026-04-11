@@ -72,6 +72,7 @@ export type {
 
 export type { PayKitPlugin } from "./types/plugin";
 
+export { PAYKIT_STRIPE_API_VERSION } from "./providers/stripe";
 export { PayKitError, PAYKIT_ERROR_CODES } from "./core/errors";
 export type { PayKitErrorCode } from "./core/errors";
 export { defineErrorCodes } from "./core/error-codes";

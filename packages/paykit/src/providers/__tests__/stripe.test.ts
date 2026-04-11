@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { PAYKIT_ERROR_CODES } from "../../core/errors";
-import { createStripeProvider } from "../stripe";
+import { createStripeProvider, createStripeRuntime } from "../stripe";
 
 describe("providers/stripe", () => {
   it("creates a test clock and stores its id on the provider customer", async () => {
@@ -132,6 +132,88 @@ describe("providers/stripe", () => {
       id: "clock_123",
       name: "customer_123",
       status: "ready",
+    });
+  });
+
+  describe("managed payments", () => {
+    function createCheckoutRuntime(
+      createSession: ReturnType<typeof vi.fn>,
+      managedPayments: boolean,
+    ) {
+      return createStripeProvider(
+        {
+          checkout: { sessions: { create: createSession } },
+        } as never,
+        {
+          id: "stripe",
+          kind: "stripe",
+          managedPayments,
+          secretKey: "sk_test_123",
+          webhookSecret: "whsec_123",
+        },
+      );
+    }
+
+    it("adds managed_payments to subscription checkout sessions when enabled", async () => {
+      const createSession = vi
+        .fn()
+        .mockResolvedValue({ id: "cs_123", url: "https://checkout.stripe.com/x" });
+      const runtime = createCheckoutRuntime(createSession, true);
+
+      await runtime.createSubscriptionCheckout({
+        cancelUrl: "https://example.com/cancel",
+        metadata: {},
+        providerCustomerId: "cus_123",
+        providerPriceId: "price_123",
+        successUrl: "https://example.com/success",
+      });
+
+      expect(createSession).toHaveBeenCalledWith(
+        expect.objectContaining({ managed_payments: { enabled: true } }),
+      );
+    });
+
+    it("does not add managed_payments when disabled", async () => {
+      const createSession = vi
+        .fn()
+        .mockResolvedValue({ id: "cs_123", url: "https://checkout.stripe.com/x" });
+      const runtime = createCheckoutRuntime(createSession, false);
+
+      await runtime.createSubscriptionCheckout({
+        cancelUrl: "https://example.com/cancel",
+        metadata: {},
+        providerCustomerId: "cus_123",
+        providerPriceId: "price_123",
+        successUrl: "https://example.com/success",
+      });
+
+      const params = createSession.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(params.managed_payments).toBeUndefined();
+    });
+
+    it("throws when managedPayments is enabled without the preview apiVersion", () => {
+      expect(() =>
+        createStripeRuntime({
+          id: "stripe",
+          kind: "stripe",
+          managedPayments: true,
+          secretKey: "sk_test_123",
+          webhookSecret: "whsec_123",
+        }),
+      ).toThrowError(/apiVersion.*2026-03-04\.preview/);
+    });
+
+    it("constructs the runtime when managedPayments is enabled with the preview apiVersion", () => {
+      expect(() =>
+        createStripeRuntime({
+          apiVersion: "2026-03-04.preview",
+          id: "stripe",
+          kind: "stripe",
+          managedPayments: true,
+          secretKey: "sk_test_123",
+          webhookSecret: "whsec_123",
+        }),
+      ).not.toThrow();
     });
   });
 });
