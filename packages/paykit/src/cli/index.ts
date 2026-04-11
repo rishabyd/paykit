@@ -24,23 +24,15 @@ switch (commandName) {
     program.addCommand(pushCommand);
     break;
   }
-  case "telemetry": {
-    const { telemetryCommand } = await import("./commands/telemetry");
-    program.addCommand(telemetryCommand);
-    break;
-  }
   default: {
-    const [{ statusCommand }, { initCommand }, { pushCommand }, { telemetryCommand }] =
-      await Promise.all([
-        import("./commands/status"),
-        import("./commands/init"),
-        import("./commands/push"),
-        import("./commands/telemetry"),
-      ]);
+    const [{ statusCommand }, { initCommand }, { pushCommand }] = await Promise.all([
+      import("./commands/status"),
+      import("./commands/init"),
+      import("./commands/push"),
+    ]);
     program.addCommand(statusCommand);
     program.addCommand(initCommand);
     program.addCommand(pushCommand);
-    program.addCommand(telemetryCommand);
   }
 }
 
