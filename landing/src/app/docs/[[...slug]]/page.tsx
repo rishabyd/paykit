@@ -12,6 +12,7 @@ import { CopyMarkdownButton } from "@/components/docs/copy-markdown-button";
 import { Features } from "@/components/docs/features";
 import { PackageInstall, PackageRun } from "@/components/docs/package-command";
 import { TocFooter } from "@/components/docs/toc-footer";
+import { URLs } from "@/lib/consts";
 import { source } from "@/lib/source";
 import { cn } from "@/lib/utils";
 
@@ -102,5 +103,22 @@ export async function generateMetadata({ params }: DocsPageProps): Promise<Metad
   return {
     title: page.data.title,
     description: page.data.description,
+    openGraph: {
+      title: page.data.title,
+      description: page.data.description,
+      images: [
+        {
+          url: new URL(`/api/og/${slug.join("/")}`, URLs.site),
+          width: 1200,
+          height: 600,
+          alt: page.data.title,
+        },
+      ],
+    },
+    twitter: {
+      title: page.data.title,
+      description: page.data.description,
+      images: [new URL(`/api/og/${slug.join("/")}`, URLs.site)],
+    },
   };
 }
