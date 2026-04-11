@@ -8,6 +8,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import type { ComponentPropsWithoutRef } from "react";
 
+import { CopyMarkdownButton } from "@/components/docs/copy-markdown-button";
 import { Features } from "@/components/docs/features";
 import { PackageInstall, PackageRun } from "@/components/docs/package-command";
 import { TocFooter } from "@/components/docs/toc-footer";
@@ -53,6 +54,9 @@ export default async function Page({ params }: DocsPageProps) {
     >
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
+      <div className="-mt-6 border-b pb-5 mb-4">
+        <CopyMarkdownButton markdownUrl={`${page.url}.mdx`} />
+      </div>
       <DocsBody>
         <MDXContent
           components={{
