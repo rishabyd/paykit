@@ -242,9 +242,15 @@ async function initAction(options: { cwd: string; defaults: boolean }): Promise<
     const missingPerFile = getMissingEnvVars(parsed, envVarsToAdd);
 
     if (missingPerFile.length > 0) {
+      for (const { file, missing } of missingPerFile) {
+        if (missing.length === 0) continue;
+        updateEnvFiles(
+          [file],
+          missing.map((key) => `${key}=`),
+        );
+      }
+
       const allMissing = [...new Set(missingPerFile.flatMap((f) => f.missing))];
-      const lines = allMissing.map((key) => `${key}=`);
-      updateEnvFiles(envFiles, lines);
       const varList = allMissing.map((v) => `  ${picocolors.dim(`${v}=`)}`).join("\n");
       p.log.success(`Added missing env vars:\n${varList}`);
     }
@@ -362,7 +368,7 @@ async function initAction(options: { cwd: string; defaults: boolean }): Promise<
 
   // ── Pricing template (skip if plans file exists) ──
 
-  const plansPath = configPath.replace(/paykit\.ts$/, "paykit-plans.ts");
+  const plansPath = configPath.replace(/paykit(\.config)?\.ts$/, "paykit-plans.ts");
   const plansFullPath = path.join(cwd, plansPath);
   let templateId: string | symbol = "saas-starter";
 
