@@ -51,7 +51,7 @@ export async function printUpdateNotification(
   if (!isNewer(latest, currentVersion)) return;
 
   console.log(
-    `\n   New version available: ${picocolors.yellow(currentVersion)} → ${picocolors.yellow(latest)}` +
-      `\n   To update: ${picocolors.bold(installCommand)}`,
+    `   New version available: ${picocolors.yellow(currentVersion)} → ${picocolors.yellow(latest)}\n` +
+      `   To update: ${picocolors.bold(installCommand)}`,
   );
 }
