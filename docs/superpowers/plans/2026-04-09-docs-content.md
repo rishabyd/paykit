@@ -562,7 +562,6 @@ window.location.href = url;
 2. **`paykitjs init`.** Interactive setup wizard. Scaffolds config file, plans, route handler, and optional client. Prompts for provider selection.
 3. **`paykitjs push`.** Applies database migrations and syncs plan definitions to the database and provider. Run on initial setup and after changing plans.
 4. **`paykitjs status`.** Validates configuration, database connection, migration status, provider connectivity, and sync status. Pass `--throw` to exit with code 1 on failures (useful for CI).
-5. **`paykitjs telemetry`.** Manage anonymous telemetry. Subcommands: `enable`, `disable`, `status`. Respects `PAYKIT_TELEMETRY_DISABLED` and `DO_NOT_TRACK` env vars.
 
 All commands shown with `<PackageRun>` component.
 

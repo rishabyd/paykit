@@ -5,8 +5,10 @@ import { version as currentVersion } from "../../version";
 const UPDATE_CHECK_TIMEOUT_MS = 3000;
 
 function isNewer(latest: string, current: string): boolean {
-  const [latestMain, latestPre] = latest.split("-");
-  const [currentMain, currentPre] = current.split("-");
+  const [latestMain, ...latestPreParts] = latest.split("-");
+  const [currentMain, ...currentPreParts] = current.split("-");
+  const latestPre = latestPreParts.join("-");
+  const currentPre = currentPreParts.join("-");
 
   const latestParts = latestMain!.split(".").map(Number);
   const currentParts = currentMain!.split(".").map(Number);
@@ -16,8 +18,29 @@ function isNewer(latest: string, current: string): boolean {
     if ((latestParts[i] ?? 0) < (currentParts[i] ?? 0)) return false;
   }
 
-  // Same main version: stable is newer than pre-release
+  // Same main version: stable is newer than any pre-release
   if (currentPre && !latestPre) return true;
+  if (!currentPre) return false;
+
+  // Both pre-release: compare identifiers
+  const latestIds = latestPre.split(".");
+  const currentIds = currentPre.split(".");
+
+  for (let i = 0; i < Math.max(latestIds.length, currentIds.length); i++) {
+    if (i >= currentIds.length) return true;
+    if (i >= latestIds.length) return false;
+
+    const lNum = Number(latestIds[i]);
+    const cNum = Number(currentIds[i]);
+
+    if (!Number.isNaN(lNum) && !Number.isNaN(cNum)) {
+      if (lNum > cNum) return true;
+      if (lNum < cNum) return false;
+    } else {
+      if (latestIds[i]! > currentIds[i]!) return true;
+      if (latestIds[i]! < currentIds[i]!) return false;
+    }
+  }
 
   return false;
 }

@@ -88,8 +88,9 @@ export function formatProductDiffs(
   plans: readonly NormalizedPlan[],
   deps: Pick<CliDeps, "formatPlanLine" | "formatPrice">,
 ): string[] {
+  const plansById = new Map(plans.map((pl) => [pl.id, pl]));
   return diffs.map((diff) => {
-    const plan = plans.find((pl) => pl.id === diff.id);
+    const plan = plansById.get(diff.id);
     const price = plan ? deps.formatPrice(plan.priceAmount ?? 0, plan.priceInterval) : "$0";
     return deps.formatPlanLine(diff.action, diff.id, price);
   });

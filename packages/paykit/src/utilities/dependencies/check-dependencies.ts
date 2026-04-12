@@ -8,29 +8,31 @@ export async function checkDependencies(
 ): Promise<void> {
   const { resolved } = await getDependencies(process.cwd(), dependencies);
 
-  const foundVersions: Record<string, string> = {};
+  const versionMap = new Map<string, string[]>();
 
   for (const [pkg, { version }] of resolved) {
-    if (!(version in foundVersions)) {
-      foundVersions[version] = pkg;
+    const existing = versionMap.get(version);
+    if (existing) {
+      existing.push(pkg);
+    } else {
+      versionMap.set(version, [pkg]);
     }
   }
 
-  const versionCount = Object.keys(foundVersions).length;
-  if (versionCount <= 1) return;
+  if (versionMap.size <= 1) return;
 
   const targetVersion = resolved.get(targetVersionDependency)?.version;
 
-  const mismatched = targetVersion
-    ? Object.entries(foundVersions).filter(([version]) => version !== targetVersion)
-    : Object.entries(foundVersions);
+  const mismatched = [...versionMap.entries()].filter(([version]) => version !== targetVersion);
 
-  const lines = mismatched.map(([version, pkg]) =>
-    targetVersion ? `  ${pkg}@${version} (expected ${targetVersion})` : `  ${pkg}@${version}`,
+  const lines = mismatched.flatMap(([version, pkgs]) =>
+    pkgs.map((pkg) =>
+      targetVersion ? `  ${pkg}@${version} (expected ${targetVersion})` : `  ${pkg}@${version}`,
+    ),
   );
 
   const fixPkgs = mismatched
-    .map(([_, pkg]) => (targetVersion ? `${pkg}@${targetVersion}` : pkg))
+    .flatMap(([_, pkgs]) => pkgs.map((pkg) => (targetVersion ? `${pkg}@${targetVersion}` : pkg)))
     .join(" ");
 
   console.warn(

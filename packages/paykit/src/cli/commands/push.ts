@@ -29,6 +29,13 @@ async function pushAction(options: { config?: string; cwd: string; yes?: boolean
   const database = createPool(deps, config.options.database);
 
   try {
+    if (!config.options.provider) {
+      s.stop("");
+      p.log.error(`Config\n  ${picocolors.red("✖")} No provider configured`);
+      p.cancel("Push failed");
+      process.exit(1);
+    }
+
     const connStr = deps.getConnectionString(database as never);
     const [stripeResult, pendingMigrations] = await Promise.all([
       checkStripe(deps, config.options.provider.secretKey),

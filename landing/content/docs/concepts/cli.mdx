@@ -44,14 +44,9 @@ Pass `--throw` to exit with code 1 on failures, useful for CI pipelines:
 
 <PackageRun command="paykitjs status --throw" />
 
-## `paykitjs telemetry`
+## Telemetry
 
-<PackageRun command="paykitjs telemetry status" />
+Telemetry can be disabled via environment variables:
 
-Manages anonymous usage telemetry. PayKit collects no personally identifiable information. Subcommands:
-
-- `enable` - opt in to telemetry
-- `disable` - opt out
-- `status` - show the current setting
-
-You can also disable telemetry permanently by setting the `PAYKIT_TELEMETRY_DISABLED` or `DO_NOT_TRACK` environment variables. Either one takes precedence over the local setting.
+- `PAYKIT_TELEMETRY_DISABLED=1`
+- `DO_NOT_TRACK=1`
