@@ -97,6 +97,7 @@ export async function getProductByHash(
 ): Promise<StoredProduct | null> {
   const result = await database.query.product.findFirst({
     where: and(eq(product.id, id), eq(product.hash, hash)),
+    orderBy: (p, { desc }) => [desc(p.version)],
   });
 
   return result ?? null;

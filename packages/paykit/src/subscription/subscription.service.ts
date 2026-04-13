@@ -8,13 +8,14 @@ import {
   upsertProviderCustomer,
 } from "../customer/customer.service";
 import type { PayKitDatabase } from "../database";
-import { entitlement, product, subscription } from "../database/schema";
+import { entitlement, feature, product, subscription } from "../database/schema";
 import { upsertInvoiceRecord } from "../invoice/invoice.service";
 import { getDefaultPaymentMethod } from "../payment-method/payment-method.service";
 import {
   getDefaultProductInGroup,
   getProductByHash,
   getProductByProviderPriceId,
+  getProductFeatures,
   withProviderInfo,
 } from "../product/product.service";
 import type { ProviderRequiredAction, ProviderSubscription } from "../providers/provider";
@@ -70,22 +71,45 @@ export async function subscribeToPlan(
   });
 }
 
+async function resolveStoredPlanFeatures(
+  database: PayKitDatabase,
+  productInternalId: string,
+): Promise<readonly NormalizedPlanFeature[]> {
+  const stored = await getProductFeatures(database, productInternalId);
+  const featureIds = stored.map((f) => f.featureId);
+  const features =
+    featureIds.length > 0
+      ? await database.query.feature.findMany({
+          where: inArray(feature.id, featureIds),
+        })
+      : [];
+  const featureTypeMap = new Map(features.map((f) => [f.id, f.type]));
+  return stored.map((f) => ({
+    config: f.config,
+    id: f.featureId,
+    limit: f.limit,
+    resetInterval: f.resetInterval as NormalizedPlanFeature["resetInterval"],
+    type: (featureTypeMap.get(f.featureId) ?? "metered") as NormalizedPlanFeature["type"],
+  }));
+}
+
 export async function loadSubscribeContext(ctx: PayKitContext, input: SubscribeInput) {
   const providerId = ctx.provider.id;
   const normalizedPlan = ctx.plans.planMap.get(input.planId);
-  const matchingProduct = normalizedPlan
-    ? await getProductByHash(ctx.database, input.planId, normalizedPlan.hash)
+  const resolvedHash = input.planHash ?? normalizedPlan?.hash;
+  const matchingProduct = resolvedHash
+    ? await getProductByHash(ctx.database, input.planId, resolvedHash)
     : null;
   const storedPlan = matchingProduct ? withProviderInfo(matchingProduct, providerId) : null;
 
-  if (normalizedPlan && !storedPlan) {
+  if (resolvedHash && !storedPlan) {
     ctx.logger.error(
-      { planId: input.planId, hash: normalizedPlan.hash },
-      `No synced version of plan "${input.planId}" matches the current schema. Run \`paykitjs push\` to sync.`,
+      { planId: input.planId, hash: resolvedHash },
+      `No synced version of plan "${input.planId}" matches hash "${resolvedHash}". Run \`paykitjs push\` to sync.`,
     );
   }
 
-  if (!normalizedPlan || !storedPlan) {
+  if (!storedPlan) {
     throw PayKitError.from(
       "NOT_FOUND",
       PAYKIT_ERROR_CODES.PLAN_NOT_FOUND,
@@ -134,6 +158,10 @@ export async function loadSubscribeContext(ctx: PayKitContext, input: SubscribeI
     hasProviderSubscription(activeSubscription) &&
     targetAmount > activeAmount;
 
+  const planFeatures = normalizedPlan
+    ? normalizedPlan.includes
+    : await resolveStoredPlanFeatures(ctx.database, storedPlan.internalId);
+
   return {
     activeSubscription,
     cancelUrl: input.cancelUrl,
@@ -142,6 +170,7 @@ export async function loadSubscribeContext(ctx: PayKitContext, input: SubscribeI
     isPaidTarget,
     isUpgrade,
     normalizedPlan,
+    planFeatures,
     providerCustomerId,
     providerId,
     scheduledSubscriptions,
@@ -285,6 +314,7 @@ export async function prepareSubscribeCheckoutCompleted(
 
   const customerId = event.payload.metadata?.paykit_customer_id;
   const planId = event.payload.metadata?.paykit_plan_id;
+  const planHash = event.payload.metadata?.paykit_plan_hash;
   if (!customerId || !planId) {
     throw PayKitError.from(
       "BAD_REQUEST",
@@ -304,6 +334,7 @@ export async function prepareSubscribeCheckoutCompleted(
 
   const subCtx = await loadSubscribeContext(ctx, {
     customerId,
+    planHash: planHash ?? undefined,
     planId,
     successUrl: "https://paykit.invalid/checkout",
   });
@@ -1030,6 +1061,7 @@ async function createCheckoutSubscribe(
     metadata: {
       paykit_customer_id: subCtx.customerId,
       paykit_intent: "subscribe",
+      paykit_plan_hash: subCtx.storedPlan.hash!,
       paykit_plan_id: subCtx.storedPlan.id,
     },
     providerCustomerId: subCtx.providerCustomerId,
@@ -1050,7 +1082,7 @@ async function insertLocalTargetSubscription(
 ): Promise<void> {
   await insertSubscriptionRecord(database, {
     customerId: subCtx.customerId,
-    planFeatures: subCtx.normalizedPlan.includes,
+    planFeatures: subCtx.planFeatures,
     productInternalId: subCtx.storedPlan.internalId,
     providerId: subCtx.providerId,
     startedAt: input.startedAt,
@@ -1095,7 +1127,7 @@ async function upsertProviderBackedTargetSubscription(
       currentPeriodEndAt: input.subscription.currentPeriodEndAt ?? null,
       currentPeriodStartAt: input.subscription.currentPeriodStartAt ?? null,
       customerId: subCtx.customerId,
-      planFeatures: subCtx.normalizedPlan.includes,
+      planFeatures: subCtx.planFeatures,
       productInternalId: subCtx.storedPlan.internalId,
       providerId: subCtx.providerId,
       providerData,
