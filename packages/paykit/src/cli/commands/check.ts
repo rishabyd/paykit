@@ -67,12 +67,35 @@ async function checkAction(options: { config?: string; cwd: string }): Promise<v
 
   p.log.info(`Database\n  ${picocolors.green("✔")} ${connStr}\n  ${migrationStatus}`);
 
-  p.log.info(
-    `Provider\n` +
-      `  ${picocolors.green("✔")} ${config.options.provider.name} (${config.options.provider.id})`,
-  );
+  const adapter = config.options.provider.createAdapter();
+  const providerCheck = await adapter.check?.();
 
-  let hasIssues = pendingMigrations > 0;
+  if (providerCheck) {
+    const statusIcon = providerCheck.ok ? picocolors.green("✔") : picocolors.red("✖");
+    const providerLine = providerCheck.ok
+      ? `${statusIcon} ${providerCheck.displayName} (${providerCheck.mode})`
+      : `${statusIcon} ${providerCheck.error ?? "Could not verify provider"}`;
+
+    let webhookLine = "";
+    if (providerCheck.ok && providerCheck.webhookEndpoints) {
+      if (providerCheck.webhookEndpoints.length > 0) {
+        const lines = providerCheck.webhookEndpoints.map((ep) =>
+          picocolors.dim(`- Webhook endpoint registered (${ep.url})`),
+        );
+        webhookLine = `\n  ${lines.join("\n  ")}`;
+      } else {
+        webhookLine = `\n  ${picocolors.dim("- No webhook endpoint (use provider CLI for local testing)")}`;
+      }
+    }
+
+    p.log.info(`Provider\n  ${providerLine}${webhookLine}`);
+  } else {
+    p.log.info(
+      `Provider\n  ${picocolors.dim("?")} ${config.options.provider.name} (${config.options.provider.id}) — configured, not verified`,
+    );
+  }
+
+  let hasIssues = pendingMigrations > 0 || (providerCheck !== undefined && !providerCheck.ok);
 
   if (pendingMigrations > 0) {
     p.log.info(

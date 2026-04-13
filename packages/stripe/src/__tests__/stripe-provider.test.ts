@@ -23,7 +23,8 @@ describe("@paykitjs/stripe", () => {
     const adapter = config.createAdapter();
     expect(adapter.id).toBe("stripe");
     expect(adapter.name).toBe("Stripe");
-    expect(typeof adapter.upsertCustomer).toBe("function");
+    expect(typeof adapter.createCustomer).toBe("function");
+    expect(typeof adapter.updateCustomer).toBe("function");
     expect(typeof adapter.handleWebhook).toBe("function");
   });
 });

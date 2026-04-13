@@ -29,7 +29,7 @@ describe("providers/stripe", () => {
       },
     );
 
-    const result = await runtime.upsertCustomer({
+    const result = await runtime.createCustomer({
       createTestClock: true,
       email: "test@example.com",
       id: "customer_123",
@@ -78,7 +78,7 @@ describe("providers/stripe", () => {
     );
 
     await expect(
-      runtime.upsertCustomer({
+      runtime.createCustomer({
         createTestClock: true,
         id: "customer_123",
       }),

@@ -350,6 +350,17 @@ export async function findCustomerByProviderCustomerId(
   );
 }
 
+function providerCustomerNeedsSync(
+  existing: ProviderCustomer,
+  customer: { email: string | null; name: string | null; metadata: Record<string, string> | null },
+): boolean {
+  if ((existing.syncedEmail ?? null) !== (customer.email ?? null)) return true;
+  if ((existing.syncedName ?? null) !== (customer.name ?? null)) return true;
+  const existingMeta = JSON.stringify(existing.syncedMetadata ?? null);
+  const currentMeta = JSON.stringify(customer.metadata ?? null);
+  return existingMeta !== currentMeta;
+}
+
 export async function upsertProviderCustomer(
   ctx: PayKitContext,
   input: { customerId: string },
@@ -360,7 +371,10 @@ export async function upsertProviderCustomer(
   const existingProviderCustomer = getProviderCustomer(existingCustomer, providerId);
   const existingProviderCustomerId = existingProviderCustomer?.id ?? null;
 
-  if (existingProviderCustomerId) {
+  if (
+    existingProviderCustomerId &&
+    !providerCustomerNeedsSync(existingProviderCustomer!, existingCustomer)
+  ) {
     return {
       customerId: input.customerId,
       providerCustomer: existingProviderCustomer as ProviderCustomer,
@@ -368,21 +382,45 @@ export async function upsertProviderCustomer(
     };
   }
 
-  const { providerCustomer } = await ctx.provider.upsertCustomer({
-    createTestClock: ctx.options.testing?.enabled === true,
-    id: existingCustomer.id,
-    email: existingCustomer.email ?? undefined,
-    name: existingCustomer.name ?? undefined,
-    metadata: existingCustomer.metadata ?? undefined,
-  });
-  const providerCustomerId = providerCustomer.id;
+  let providerCustomer: ProviderCustomer;
+
+  if (existingProviderCustomerId) {
+    await ctx.provider.updateCustomer({
+      providerCustomerId: existingProviderCustomerId,
+      email: existingCustomer.email ?? undefined,
+      name: existingCustomer.name ?? undefined,
+      metadata: existingCustomer.metadata ?? undefined,
+    });
+    providerCustomer = { ...existingProviderCustomer!, id: existingProviderCustomerId };
+  } else {
+    const result = await ctx.provider.createCustomer({
+      createTestClock: ctx.options.testing?.enabled === true,
+      id: existingCustomer.id,
+      email: existingCustomer.email ?? undefined,
+      name: existingCustomer.name ?? undefined,
+      metadata: existingCustomer.metadata ?? undefined,
+    });
+    providerCustomer = result.providerCustomer;
+  }
+
+  const enrichedProviderCustomer: ProviderCustomer = {
+    ...providerCustomer,
+    syncedEmail: existingCustomer.email,
+    syncedName: existingCustomer.name,
+    syncedMetadata: existingCustomer.metadata,
+  };
+
   await setProviderCustomer(ctx.database, {
     customerId: input.customerId,
-    providerCustomer,
+    providerCustomer: enrichedProviderCustomer,
     providerId,
   });
 
-  return { customerId: input.customerId, providerCustomer, providerCustomerId };
+  return {
+    customerId: input.customerId,
+    providerCustomer: enrichedProviderCustomer,
+    providerCustomerId: providerCustomer.id,
+  };
 }
 
 export async function deleteCustomerFromDatabase(

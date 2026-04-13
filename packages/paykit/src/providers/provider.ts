@@ -4,6 +4,9 @@ export interface ProviderCustomer {
   frozenTime?: string;
   id: string;
   testClockId?: string;
+  syncedEmail?: string | null;
+  syncedName?: string | null;
+  syncedMetadata?: Record<string, string> | null;
 }
 
 export type ProviderCustomerMap = Record<string, ProviderCustomer>;
@@ -64,13 +67,20 @@ export interface PaymentProvider {
   readonly id: string;
   readonly name: string;
 
-  upsertCustomer(data: {
+  createCustomer(data: {
     createTestClock?: boolean;
     id: string;
     email?: string;
     name?: string;
     metadata?: Record<string, string>;
   }): Promise<{ providerCustomer: ProviderCustomer }>;
+
+  updateCustomer(data: {
+    providerCustomerId: string;
+    email?: string;
+    name?: string;
+    metadata?: Record<string, string>;
+  }): Promise<void>;
 
   deleteCustomer(data: { providerCustomerId: string }): Promise<void>;
 
@@ -148,6 +158,14 @@ export interface PaymentProvider {
     providerCustomerId: string;
     returnUrl: string;
   }): Promise<{ url: string }>;
+
+  check?(): Promise<{
+    ok: boolean;
+    displayName: string;
+    mode: string;
+    webhookEndpoints?: Array<{ url: string; status: string }>;
+    error?: string;
+  }>;
 }
 
 export interface PayKitProviderConfig {

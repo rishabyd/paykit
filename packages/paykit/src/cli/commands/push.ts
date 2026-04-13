@@ -26,10 +26,22 @@ async function pushAction(options: { config?: string; cwd: string; yes?: boolean
   try {
     const connStr = getConnectionString(database as never);
 
+    if (!config.options.provider) {
+      p.log.error("No provider configured");
+      p.cancel("Push failed");
+      process.exit(1);
+    }
+
+    const adapter = config.options.provider.createAdapter();
+    const providerCheck = await adapter.check?.();
+    const providerLabel = providerCheck?.ok
+      ? `${providerCheck.displayName} (${providerCheck.mode})`
+      : `${config.options.provider.name} (${config.options.provider.id})`;
+
     p.log.info(
       `Connected\n` +
         `  Database ${picocolors.dim("·")} ${connStr}\n` +
-        `  Provider ${picocolors.dim("·")} ${config.options.provider.name} (${config.options.provider.id})`,
+        `  Provider ${picocolors.dim("·")} ${providerLabel}`,
     );
 
     // 1. Apply pending migrations first — schema must exist before querying products

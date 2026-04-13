@@ -511,7 +511,7 @@ export function createStripeProvider(client: StripeSdk, options: StripeOptions):
     id: "stripe",
     name: "Stripe",
 
-    async upsertCustomer(data) {
+    async createCustomer(data) {
       let testClock: ProviderTestClock | undefined;
       if (data.createTestClock) {
         assertStripeTestKey(options);
@@ -539,6 +539,14 @@ export function createStripeProvider(client: StripeSdk, options: StripeOptions):
           testClockId: testClock?.id,
         },
       };
+    },
+
+    async updateCustomer(data) {
+      await client.customers.update(data.providerCustomerId, {
+        email: data.email,
+        metadata: data.metadata,
+        name: data.name,
+      });
     },
 
     async deleteCustomer(data) {
@@ -867,7 +875,10 @@ export function createStripeProvider(client: StripeSdk, options: StripeOptions):
     },
 
     async handleWebhook(data) {
-      const signature = data.headers["stripe-signature"];
+      const headerKey = Object.keys(data.headers).find(
+        (k) => k.toLowerCase() === "stripe-signature",
+      );
+      const signature = headerKey ? data.headers[headerKey] : undefined;
       if (!signature) {
         throw PayKitError.from("BAD_REQUEST", PAYKIT_ERROR_CODES.PROVIDER_SIGNATURE_MISSING);
       }
@@ -887,6 +898,33 @@ export function createStripeProvider(client: StripeSdk, options: StripeOptions):
         return_url: data.returnUrl,
       });
       return { url: session.url };
+    },
+
+    async check() {
+      const mode =
+        options.secretKey.startsWith("sk_test_") || options.secretKey.startsWith("rk_test_")
+          ? "test mode"
+          : "live mode";
+      try {
+        const account = await client.accounts.retrieve();
+        const displayName =
+          account.settings?.dashboard?.display_name || account.business_profile?.name || account.id;
+
+        let webhookEndpoints: Array<{ url: string; status: string }> = [];
+        try {
+          const endpoints = await client.webhookEndpoints.list({ limit: 100 });
+          webhookEndpoints = endpoints.data
+            .filter((ep) => ep.status === "enabled")
+            .map((ep) => ({ url: ep.url, status: ep.status }));
+        } catch {
+          // webhook listing may fail with restricted keys
+        }
+
+        return { ok: true, displayName, mode, webhookEndpoints };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return { ok: false, displayName: "unknown", mode, error: message };
+      }
     },
   };
 }
