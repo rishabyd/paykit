@@ -7,7 +7,7 @@ import {
   getProviderCustomerIdForCustomer,
   hardDeleteCustomer,
   listCustomers,
-  syncCustomerWithDefaults,
+  upsertCustomer as upsertCustomerService,
 } from "./customer.service";
 
 const upsertCustomerSchema = z.object({
@@ -30,7 +30,7 @@ const listCustomersSchema = z
   .optional();
 
 export const upsertCustomer = definePayKitMethod({ input: upsertCustomerSchema }, async (ctx) =>
-  syncCustomerWithDefaults(ctx.paykit, ctx.input),
+  upsertCustomerService(ctx.paykit, ctx.input),
 );
 
 export const getCustomer = definePayKitMethod({ input: customerIdSchema }, async (ctx) =>

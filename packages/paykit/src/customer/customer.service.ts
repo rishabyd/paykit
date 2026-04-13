@@ -19,7 +19,6 @@ import {
   getScheduledSubscriptionsInGroup,
   insertSubscriptionRecord,
 } from "../subscription/subscription.service";
-import type { DeleteCustomerAction, UpsertCustomerAction } from "../types/events";
 import type { Customer } from "../types/models";
 import type {
   CustomerEntitlement,
@@ -177,17 +176,15 @@ export async function ensureDefaultPlansForCustomer(
   }
 }
 
-export async function syncCustomerWithDefaults(
+export async function upsertCustomer(
   ctx: PayKitContext,
   input: Parameters<typeof syncCustomer>[1],
 ): Promise<Customer> {
   const syncedCustomer = await syncCustomer(ctx.database, input);
   await ensureDefaultPlansForCustomer(ctx, syncedCustomer.id);
-  const providerCustomer = await ensureTestingProviderCustomer(ctx, syncedCustomer.id);
-
-  if (!providerCustomer) {
-    return syncedCustomer;
-  }
+  const { providerCustomer } = await upsertProviderCustomer(ctx, {
+    customerId: syncedCustomer.id,
+  });
 
   return {
     ...syncedCustomer,
@@ -196,19 +193,6 @@ export async function syncCustomerWithDefaults(
       [ctx.provider.id]: providerCustomer,
     },
   };
-}
-
-export async function applyCustomerWebhookAction(
-  database: PayKitDatabase,
-  action: UpsertCustomerAction | DeleteCustomerAction,
-): Promise<string> {
-  if (action.type === "customer.upsert") {
-    await syncCustomer(database, action.data);
-    return action.data.id;
-  }
-
-  await deleteCustomerFromDatabase(database, action.data.id);
-  return action.data.id;
 }
 
 export async function getCustomerById(
@@ -399,18 +383,6 @@ export async function upsertProviderCustomer(
   });
 
   return { customerId: input.customerId, providerCustomer, providerCustomerId };
-}
-
-export async function ensureTestingProviderCustomer(
-  ctx: PayKitContext,
-  customerId: string,
-): Promise<ProviderCustomer | null> {
-  if (ctx.options.testing?.enabled !== true) {
-    return null;
-  }
-
-  const { providerCustomer } = await upsertProviderCustomer(ctx, { customerId });
-  return providerCustomer;
 }
 
 export async function deleteCustomerFromDatabase(
