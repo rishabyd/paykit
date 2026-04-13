@@ -129,6 +129,7 @@ describe("providers/stripe", () => {
     });
   });
 
+  /** @see https://github.com/getpaykit/paykit/issues/109 */
   describe("managed payments", () => {
     function createCheckoutRuntime(
       createSession: ReturnType<typeof vi.fn>,
