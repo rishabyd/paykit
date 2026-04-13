@@ -14,6 +14,7 @@ import { getDefaultPaymentMethod } from "../payment-method/payment-method.servic
 import {
   getDefaultProductInGroup,
   getProductByHash,
+  getProductByInternalId,
   getProductByProviderPriceId,
   getProductFeatures,
   withProviderInfo,
@@ -96,18 +97,12 @@ async function resolveStoredPlanFeatures(
 export async function loadSubscribeContext(ctx: PayKitContext, input: SubscribeInput) {
   const providerId = ctx.provider.id;
   const normalizedPlan = ctx.plans.planMap.get(input.planId);
-  const resolvedHash = input.planHash ?? normalizedPlan?.hash;
-  const matchingProduct = resolvedHash
-    ? await getProductByHash(ctx.database, input.planId, resolvedHash)
-    : null;
+  const matchingProduct = input.productInternalId
+    ? await getProductByInternalId(ctx.database, input.productInternalId)
+    : normalizedPlan
+      ? await getProductByHash(ctx.database, input.planId, normalizedPlan.hash)
+      : null;
   const storedPlan = matchingProduct ? withProviderInfo(matchingProduct, providerId) : null;
-
-  if (resolvedHash && !storedPlan) {
-    ctx.logger.error(
-      { planId: input.planId, hash: resolvedHash },
-      `No synced version of plan "${input.planId}" matches hash "${resolvedHash}". Run \`paykitjs push\` to sync.`,
-    );
-  }
 
   if (!storedPlan) {
     throw PayKitError.from(
@@ -314,7 +309,7 @@ export async function prepareSubscribeCheckoutCompleted(
 
   const customerId = event.payload.metadata?.paykit_customer_id;
   const planId = event.payload.metadata?.paykit_plan_id;
-  const planHash = event.payload.metadata?.paykit_plan_hash;
+  const productInternalId = event.payload.metadata?.paykit_product_internal_id;
   if (!customerId || !planId) {
     throw PayKitError.from(
       "BAD_REQUEST",
@@ -334,8 +329,8 @@ export async function prepareSubscribeCheckoutCompleted(
 
   const subCtx = await loadSubscribeContext(ctx, {
     customerId,
-    planHash: planHash ?? undefined,
     planId,
+    productInternalId: productInternalId ?? undefined,
     successUrl: "https://paykit.invalid/checkout",
   });
   if (subCtx.storedPlan.providerPriceId !== checkoutSubscription.providerPriceId) {
@@ -1061,8 +1056,8 @@ async function createCheckoutSubscribe(
     metadata: {
       paykit_customer_id: subCtx.customerId,
       paykit_intent: "subscribe",
-      paykit_plan_hash: subCtx.storedPlan.hash!,
       paykit_plan_id: subCtx.storedPlan.id,
+      paykit_product_internal_id: subCtx.storedPlan.internalId,
     },
     providerCustomerId: subCtx.providerCustomerId,
     providerPriceId: subCtx.storedPlan.providerPriceId!,

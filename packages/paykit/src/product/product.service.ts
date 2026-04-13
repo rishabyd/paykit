@@ -103,6 +103,17 @@ export async function getProductByHash(
   return result ?? null;
 }
 
+export async function getProductByInternalId(
+  database: PayKitDatabase,
+  internalId: string,
+): Promise<StoredProduct | null> {
+  const result = await database.query.product.findFirst({
+    where: eq(product.internalId, internalId),
+  });
+
+  return result ?? null;
+}
+
 export async function getLatestProductSnapshot(
   database: PayKitDatabase,
   id: string,
