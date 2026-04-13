@@ -18,7 +18,7 @@ function resolveDatabase(database: Pool | string): Pool {
   return typeof database === "string" ? new Pool({ connectionString: database }) : database;
 }
 
-describe("paykitjs check", () => {
+describe("paykitjs status", () => {
   let fixture: CliTestFixture;
 
   beforeAll(async () => {

@@ -58,6 +58,13 @@ export function getInstallCommand(pm: PackageManager, packages: string[]): strin
   return `${cmd} ${packages.join(" ")}`;
 }
 
+export function getRunCommand(pm: PackageManager, script: string): string {
+  if (pm === "npm") return `npx ${script}`;
+  if (pm === "bun") return `bunx ${script}`;
+  if (pm === "yarn") return `yarn dlx ${script}`;
+  return `pnpm dlx ${script}`;
+}
+
 export function getExecPrefix(pm: PackageManager): string {
   if (pm === "npm") return "npx";
   if (pm === "bun") return "bunx";
