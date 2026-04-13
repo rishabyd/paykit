@@ -1,24 +1,18 @@
 import type { Pool } from "pg";
-import type StripeSdk from "stripe";
 
 import type { createContext, PayKitContext } from "../../core/context";
 import type { getPendingMigrationCount, migrateDatabase } from "../../database/index";
 import type { dryRunSyncProducts, syncProducts } from "../../product/product-sync.service";
+import type { PayKitProviderConfig } from "../../providers/provider";
 import type { PayKitOptions } from "../../types/options";
 import type { NormalizedPlan } from "../../types/schema";
 import type { detectPackageManager, getInstallCommand, getRunCommand } from "./detect";
-import type {
-  formatPlanLine,
-  formatPrice,
-  getConnectionString,
-  getStripeAccountInfo,
-} from "./format";
+import type { formatPlanLine, formatPrice, getConnectionString } from "./format";
 import type { getPayKitConfig } from "./get-config";
 import type { capture } from "./telemetry";
 
 export interface CliDeps {
   Pool: typeof Pool;
-  StripeSdk: typeof StripeSdk;
   createContext: typeof createContext;
   getPendingMigrationCount: typeof getPendingMigrationCount;
   migrateDatabase: typeof migrateDatabase;
@@ -27,7 +21,6 @@ export interface CliDeps {
   formatPlanLine: typeof formatPlanLine;
   formatPrice: typeof formatPrice;
   getConnectionString: typeof getConnectionString;
-  getStripeAccountInfo: typeof getStripeAccountInfo;
   getPayKitConfig: typeof getPayKitConfig;
   capture: typeof capture;
   detectPackageManager: typeof detectPackageManager;
@@ -36,10 +29,9 @@ export interface CliDeps {
 }
 
 export async function loadCliDeps(): Promise<CliDeps> {
-  const [pg, stripe, context, database, productSync, format, getConfig, telemetry, detect] =
+  const [pg, context, database, productSync, format, getConfig, telemetry, detect] =
     await Promise.all([
       import("pg"),
-      import("stripe"),
       import("../../core/context"),
       import("../../database/index"),
       import("../../product/product-sync.service"),
@@ -51,7 +43,6 @@ export async function loadCliDeps(): Promise<CliDeps> {
 
   return {
     Pool: pg.Pool,
-    StripeSdk: stripe.default,
     createContext: context.createContext,
     getPendingMigrationCount: database.getPendingMigrationCount,
     migrateDatabase: database.migrateDatabase,
@@ -60,7 +51,6 @@ export async function loadCliDeps(): Promise<CliDeps> {
     formatPlanLine: format.formatPlanLine,
     formatPrice: format.formatPrice,
     getConnectionString: format.getConnectionString,
-    getStripeAccountInfo: format.getStripeAccountInfo,
     getPayKitConfig: getConfig.getPayKitConfig,
     capture: telemetry.capture,
     detectPackageManager: detect.detectPackageManager,
@@ -111,44 +101,43 @@ export async function checkDatabase(
   }
 }
 
-export interface StripeCheckResult {
+export interface ProviderCheckResult {
   account: { ok: true; displayName: string; mode: string } | { ok: false; message: string };
-  webhooks: Array<{ url: string }> | null;
+  webhookEndpoints: Array<{ url: string; status: string }> | null;
 }
 
-export async function checkStripe(
-  deps: Pick<CliDeps, "StripeSdk">,
-  secretKey: string,
-): Promise<StripeCheckResult> {
-  const client = new deps.StripeSdk(secretKey);
-  const mode =
-    secretKey.startsWith("sk_test_") || secretKey.startsWith("rk_test_")
-      ? "test mode"
-      : "live mode";
+export async function checkProvider(
+  providerConfig: PayKitProviderConfig,
+): Promise<ProviderCheckResult> {
+  try {
+    const adapter = providerConfig.createAdapter();
+    const result = await adapter.check?.();
 
-  const [account, webhooks] = await Promise.all([
-    client.accounts
-      .retrieve()
-      .then((acc) => ({
-        ok: true as const,
-        displayName:
-          acc.settings?.dashboard?.display_name ||
-          acc.business_profile?.name ||
-          acc.id ||
-          "unknown",
-        mode,
-      }))
-      .catch((error) => ({
-        ok: false as const,
-        message: error instanceof Error ? error.message : String(error),
-      })),
-    client.webhookEndpoints
-      .list({ limit: 100 })
-      .then((endpoints) => endpoints.data.filter((ep) => ep.status === "enabled"))
-      .catch(() => null),
-  ]);
+    if (!result) {
+      return {
+        account: { ok: true, displayName: providerConfig.name, mode: "unknown" },
+        webhookEndpoints: null,
+      };
+    }
 
-  return { account, webhooks };
+    if (result.ok) {
+      return {
+        account: { ok: true, displayName: result.displayName, mode: result.mode },
+        webhookEndpoints: result.webhookEndpoints ?? null,
+      };
+    }
+
+    return {
+      account: { ok: false, message: result.error ?? "Provider check failed" },
+      webhookEndpoints: null,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Provider check failed";
+    return {
+      account: { ok: false, message },
+      webhookEndpoints: null,
+    };
+  }
 }
 
 export async function loadProductDiffs(

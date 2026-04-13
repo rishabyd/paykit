@@ -6,7 +6,7 @@ import picocolors from "picocolors";
 
 import {
   checkDatabase,
-  checkStripe,
+  checkProvider,
   createPool,
   formatProductDiffs,
   loadCliDeps,
@@ -58,13 +58,13 @@ async function statusAction(options: {
     process.exit(1);
   }
 
-  // Database + Stripe in parallel
+  // Database + Provider in parallel
   const database = createPool(deps, config.options.database);
   const connStr = deps.getConnectionString(database as never);
 
-  const [dbResult, stripeResult] = await Promise.all([
+  const [dbResult, providerResult] = await Promise.all([
     checkDatabase(database, deps),
-    checkStripe(deps, config.options.provider.secretKey),
+    checkProvider(config.options.provider),
   ]);
 
   if (!dbResult.ok) {
@@ -75,10 +75,10 @@ async function statusAction(options: {
     process.exit(1);
   }
 
-  if (!stripeResult.account.ok) {
+  if (!providerResult.account.ok) {
     s.stop("");
-    p.log.error(`Stripe\n  ${picocolors.red("✖")} ${stripeResult.account.message}`);
-    p.outro("Fix Stripe issues before continuing");
+    p.log.error(`Provider\n  ${picocolors.red("✖")} ${providerResult.account.message}`);
+    p.outro("Fix provider issues before continuing");
     await database.end();
     process.exit(1);
   }
@@ -86,15 +86,16 @@ async function statusAction(options: {
   const pendingMigrations = dbResult.pendingMigrations;
 
   let webhookStatus: string;
-  if (stripeResult.webhooks === null) {
+  if (providerResult.webhookEndpoints === null) {
     webhookStatus = `${picocolors.dim("?")} Could not check webhook status`;
-  } else if (stripeResult.webhooks.length > 0) {
-    const lines = stripeResult.webhooks.map((ep) =>
-      picocolors.dim(`· Webhook endpoint registered (${ep.url})`),
-    );
+  } else if (providerResult.webhookEndpoints.length > 0) {
+    const lines = providerResult.webhookEndpoints.map((ep) => {
+      const label = ep.status === "enabled" ? "registered" : `status: ${ep.status}`;
+      return picocolors.dim(`· Webhook endpoint ${label} (${ep.url})`);
+    });
     webhookStatus = lines.join("\n  ");
   } else {
-    webhookStatus = picocolors.dim("· No webhook endpoint (use Stripe CLI for local testing)");
+    webhookStatus = picocolors.dim("· No webhook endpoint (use provider CLI for local testing)");
   }
 
   // Products
@@ -135,14 +136,14 @@ async function statusAction(options: {
     `Config\n` +
       `  ${picocolors.green("✔")} ${picocolors.dim(config.path)}\n` +
       `  ${picocolors.green("✔")} ${String(planCount)} plan${planCount === 1 ? "" : "s"} defined\n` +
-      `  ${picocolors.green("✔")} Stripe provider configured`,
+      `  ${picocolors.green("✔")} Provider configured`,
   );
 
   p.log.info(`Database\n  ${picocolors.green("✔")} ${connStr}\n  ${migrationStatus}`);
 
   p.log.info(
-    `Stripe\n` +
-      `  ${picocolors.green("✔")} ${stripeResult.account.displayName} (${stripeResult.account.mode})\n` +
+    `Provider\n` +
+      `  ${picocolors.green("✔")} ${providerResult.account.displayName} (${providerResult.account.mode})\n` +
       `  ${webhookStatus}`,
   );
 

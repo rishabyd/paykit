@@ -25,12 +25,11 @@ export type {
   ReportResult,
 } from "./entitlement/entitlement.service";
 export type {
+  PayKitProviderConfig,
+  PaymentProvider,
   ProviderCustomer,
   ProviderCustomerMap,
-  PayKitProvider,
   ProviderTestClock,
-  StripeProviderConfig,
-  StripeProviderOptions,
 } from "./providers/provider";
 export type {
   Customer,

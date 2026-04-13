@@ -5,7 +5,7 @@ import { Command } from "commander";
 import picocolors from "picocolors";
 
 import {
-  checkStripe,
+  checkProvider,
   createPool,
   formatProductDiffs,
   loadCliDeps,
@@ -37,14 +37,14 @@ async function pushAction(options: { config?: string; cwd: string; yes?: boolean
     }
 
     const connStr = deps.getConnectionString(database as never);
-    const [stripeResult, pendingMigrations] = await Promise.all([
-      checkStripe(deps, config.options.provider.secretKey),
+    const [providerResult, pendingMigrations] = await Promise.all([
+      checkProvider(config.options.provider),
       deps.getPendingMigrationCount(database),
     ]);
 
-    if (!stripeResult.account.ok) {
+    if (!providerResult.account.ok) {
       s.stop("");
-      p.log.error(`Stripe\n  ${picocolors.red("✖")} ${stripeResult.account.message}`);
+      p.log.error(`Provider\n  ${picocolors.red("✖")} ${providerResult.account.message}`);
       p.cancel("Push failed");
       process.exit(1);
     }
@@ -71,7 +71,7 @@ async function pushAction(options: { config?: string; cwd: string; yes?: boolean
     p.log.info(`Database\n  ${picocolors.green("✔")} ${connStr}\n  ${migrationStatus}`);
 
     p.log.info(
-      `Stripe\n  ${picocolors.green("✔")} ${stripeResult.account.displayName} (${stripeResult.account.mode})`,
+      `Provider\n  ${picocolors.green("✔")} ${providerResult.account.displayName} (${providerResult.account.mode})`,
     );
 
     if (diffs.length > 0) {
@@ -95,7 +95,7 @@ async function pushAction(options: { config?: string; cwd: string; yes?: boolean
     const changeCount = diffs.filter((d) => d.action !== "unchanged").length;
     if (!options.yes) {
       const shouldContinue = await p.confirm({
-        message: `Push ${String(changeCount)} product change${changeCount === 1 ? "" : "s"} to Stripe?`,
+        message: `Push ${String(changeCount)} product change${changeCount === 1 ? "" : "s"}?`,
       });
       if (p.isCancel(shouldContinue) || !shouldContinue) {
         p.cancel("Aborted");

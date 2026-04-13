@@ -4,6 +4,9 @@ export interface ProviderCustomer {
   frozenTime?: string;
   id: string;
   testClockId?: string;
+  syncedEmail?: string | null;
+  syncedName?: string | null;
+  syncedMetadata?: Record<string, string> | null;
 }
 
 export type ProviderCustomerMap = Record<string, ProviderCustomer>;
@@ -60,14 +63,24 @@ export interface ProviderSubscriptionResult {
   subscription?: ProviderSubscription | null;
 }
 
-export interface StripeRuntime {
-  upsertCustomer(data: {
+export interface PaymentProvider {
+  readonly id: string;
+  readonly name: string;
+
+  createCustomer(data: {
     createTestClock?: boolean;
     id: string;
     email?: string;
     name?: string;
     metadata?: Record<string, string>;
   }): Promise<{ providerCustomer: ProviderCustomer }>;
+
+  updateCustomer(data: {
+    providerCustomerId: string;
+    email?: string;
+    name?: string;
+    metadata?: Record<string, string>;
+  }): Promise<void>;
 
   deleteCustomer(data: { providerCustomerId: string }): Promise<void>;
 
@@ -145,21 +158,18 @@ export interface StripeRuntime {
     providerCustomerId: string;
     returnUrl: string;
   }): Promise<{ url: string }>;
+
+  check?(): Promise<{
+    ok: boolean;
+    displayName: string;
+    mode: string;
+    webhookEndpoints?: Array<{ url: string; status: string }>;
+    error?: string;
+  }>;
 }
 
-export interface StripeProviderOptions {
-  currency?: string;
-  secretKey: string;
-  webhookSecret: string;
-}
-
-export interface StripeProviderConfig extends StripeProviderOptions {
+export interface PayKitProviderConfig {
   id: string;
-  kind: "stripe";
-  /**
-   * Internal test hook so repo tests can stub the Stripe runtime without a network client.
-   */
-  runtime?: StripeRuntime;
+  name: string;
+  createAdapter(): PaymentProvider;
 }
-
-export type PayKitProvider = StripeProviderConfig;
