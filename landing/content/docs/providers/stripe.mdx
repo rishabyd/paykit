@@ -116,3 +116,40 @@ export const paykit = createPayKit({
 <Callout type="info">
   Use your Stripe test mode keys (`sk_test_...`) when testing. Test mode and live mode are completely isolated in Stripe.
 </Callout>
+
+## API version
+
+PayKit pins the Stripe SDK to a known-good API version so upstream changes don't silently break your integration. Override it with `apiVersion` if you need a newer version, for example to opt into a preview feature.
+
+```ts title="paykit.ts"
+export const paykit = createPayKit({
+  // ...
+  provider: stripe({
+    secretKey: process.env.STRIPE_SECRET_KEY!,
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET!,
+    apiVersion: "2026-03-04.preview",
+  }),
+});
+```
+
+The pinned default is exported as `PAYKIT_STRIPE_API_VERSION` if you want to reference it in code.
+
+## Managed Payments
+
+Stripe Managed Payments is a preview feature where Stripe takes over tax calculation, payment method selection, and billing address collection on subscription checkout sessions. Enable it with `managedPayments: true`, and set `apiVersion` to the preview version that supports it.
+
+```ts title="paykit.ts"
+export const paykit = createPayKit({
+  // ...
+  provider: stripe({
+    secretKey: process.env.STRIPE_SECRET_KEY!,
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET!,
+    apiVersion: "2026-03-04.preview",
+    managedPayments: true,
+  }),
+});
+```
+
+<Callout type="warn">
+  Managed Payments is a Stripe preview feature and the API version required may change. Review the [Stripe Managed Payments docs](https://docs.stripe.com/payments/managed-payments) before enabling in production. Note: digital products only, no shipping, and several Checkout parameters (`automatic_tax`, `payment_method_types`, Connect fields) are not supported in this mode.
+</Callout>

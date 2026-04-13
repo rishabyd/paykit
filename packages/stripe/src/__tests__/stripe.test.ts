@@ -1,7 +1,7 @@
 import { PAYKIT_ERROR_CODES } from "paykitjs";
 import { describe, expect, it, vi } from "vitest";
 
-import { createStripeProvider } from "../stripe-provider";
+import { createStripeProvider, stripe } from "../stripe-provider";
 
 describe("providers/stripe", () => {
   it("creates a test clock and stores its id on the provider customer", async () => {
@@ -126,6 +126,94 @@ describe("providers/stripe", () => {
       id: "clock_123",
       name: "customer_123",
       status: "ready",
+    });
+  });
+
+  /** @see https://github.com/getpaykit/paykit/issues/109 */
+  describe("managed payments", () => {
+    function createCheckoutRuntime(
+      createSession: ReturnType<typeof vi.fn>,
+      managedPayments: boolean,
+    ) {
+      return createStripeProvider(
+        {
+          checkout: { sessions: { create: createSession } },
+        } as never,
+        {
+          managedPayments,
+          secretKey: "sk_test_123",
+          webhookSecret: "whsec_123",
+        },
+      );
+    }
+
+    it("adds managed_payments to subscription checkout sessions when enabled", async () => {
+      const createSession = vi
+        .fn()
+        .mockResolvedValue({ id: "cs_123", url: "https://checkout.stripe.com/x" });
+      const runtime = createCheckoutRuntime(createSession, true);
+
+      await runtime.createSubscriptionCheckout({
+        cancelUrl: "https://example.com/cancel",
+        metadata: {},
+        providerCustomerId: "cus_123",
+        providerPriceId: "price_123",
+        successUrl: "https://example.com/success",
+      });
+
+      expect(createSession).toHaveBeenCalledWith(
+        expect.objectContaining({ managed_payments: { enabled: true } }),
+      );
+    });
+
+    it("does not add managed_payments when disabled", async () => {
+      const createSession = vi
+        .fn()
+        .mockResolvedValue({ id: "cs_123", url: "https://checkout.stripe.com/x" });
+      const runtime = createCheckoutRuntime(createSession, false);
+
+      await runtime.createSubscriptionCheckout({
+        cancelUrl: "https://example.com/cancel",
+        metadata: {},
+        providerCustomerId: "cus_123",
+        providerPriceId: "price_123",
+        successUrl: "https://example.com/success",
+      });
+
+      const params = createSession.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(params.managed_payments).toBeUndefined();
+    });
+
+    it("throws when managedPayments is enabled without the preview apiVersion", () => {
+      expect(() =>
+        stripe({
+          managedPayments: true,
+          secretKey: "sk_test_123",
+          webhookSecret: "whsec_123",
+        }),
+      ).toThrowError(/managedPayments requires apiVersion/);
+    });
+
+    it("succeeds with the minimum preview apiVersion", () => {
+      expect(() =>
+        stripe({
+          apiVersion: "2026-03-04.preview",
+          managedPayments: true,
+          secretKey: "sk_test_123",
+          webhookSecret: "whsec_123",
+        }),
+      ).not.toThrow();
+    });
+
+    it("succeeds with a newer preview apiVersion", () => {
+      expect(() =>
+        stripe({
+          apiVersion: "2027-01-01.preview",
+          managedPayments: true,
+          secretKey: "sk_test_123",
+          webhookSecret: "whsec_123",
+        }),
+      ).not.toThrow();
     });
   });
 });
