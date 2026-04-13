@@ -384,7 +384,7 @@ export async function upsertProviderCustomer(
     };
   }
 
-  const { providerCustomer } = await ctx.stripe.upsertCustomer({
+  const { providerCustomer } = await ctx.provider.upsertCustomer({
     createTestClock: ctx.options.testing?.enabled === true,
     id: existingCustomer.id,
     email: existingCustomer.email ?? undefined,
@@ -439,17 +439,17 @@ export async function hardDeleteCustomer(ctx: PayKitContext, customerId: string)
   const providerCustomerId = getProviderCustomerId(existingCustomer, ctx.provider.id);
   if (providerCustomerId) {
     try {
-      const activeSubscriptions = await ctx.stripe.listActiveSubscriptions({
+      const activeSubscriptions = await ctx.provider.listActiveSubscriptions({
         providerCustomerId,
       });
       for (const sub of activeSubscriptions) {
-        await ctx.stripe.cancelSubscription({
+        await ctx.provider.cancelSubscription({
           providerSubscriptionId: sub.providerSubscriptionId,
         });
       }
-      await ctx.stripe.deleteCustomer({ providerCustomerId });
+      await ctx.provider.deleteCustomer({ providerCustomerId });
     } catch (error) {
-      ctx.logger.error({ providerCustomerId, err: error }, "failed to clean up Stripe customer");
+      ctx.logger.error({ providerCustomerId, err: error }, "failed to clean up provider customer");
     }
   }
 

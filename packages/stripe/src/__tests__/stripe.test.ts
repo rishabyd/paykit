@@ -1,7 +1,7 @@
+import { PAYKIT_ERROR_CODES } from "paykitjs";
 import { describe, expect, it, vi } from "vitest";
 
-import { PAYKIT_ERROR_CODES } from "../../core/errors";
-import { createStripeProvider } from "../stripe";
+import { createStripeProvider } from "../stripe-provider";
 
 describe("providers/stripe", () => {
   it("creates a test clock and stores its id on the provider customer", async () => {
@@ -24,8 +24,6 @@ describe("providers/stripe", () => {
         },
       } as never,
       {
-        id: "stripe",
-        kind: "stripe",
         secretKey: "sk_test_123",
         webhookSecret: "whsec_123",
       },
@@ -74,8 +72,6 @@ describe("providers/stripe", () => {
         },
       } as never,
       {
-        id: "stripe",
-        kind: "stripe",
         secretKey: "sk_live_123",
         webhookSecret: "whsec_123",
       },
@@ -111,8 +107,6 @@ describe("providers/stripe", () => {
         },
       } as never,
       {
-        id: "stripe",
-        kind: "stripe",
         secretKey: "sk_test_123",
         webhookSecret: "whsec_123",
       },

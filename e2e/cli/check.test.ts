@@ -2,7 +2,6 @@ import { sql } from "drizzle-orm";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { getStripeAccountInfo } from "../../packages/paykit/src/cli/utils/format";
 import { getPayKitConfig } from "../../packages/paykit/src/cli/utils/get-config";
 import { createContext } from "../../packages/paykit/src/core/context";
 import {
@@ -59,14 +58,6 @@ describe("paykitjs check", () => {
     } finally {
       await database.end();
     }
-  });
-
-  it("should connect to Stripe and retrieve account info", async () => {
-    const secretKey = process.env.STRIPE_SECRET_KEY!;
-    const info = await getStripeAccountInfo(secretKey);
-
-    expect(info.displayName).toBeTruthy();
-    expect(info.mode).toBe("test mode");
   });
 
   it("should report schema up to date after migration", async () => {

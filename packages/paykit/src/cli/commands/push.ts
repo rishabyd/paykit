@@ -8,12 +8,7 @@ import picocolors from "picocolors";
 import { createContext } from "../../core/context";
 import { getPendingMigrationCount, migrateDatabase } from "../../database/index";
 import { dryRunSyncProducts, syncProducts } from "../../product/product-sync.service";
-import {
-  formatPlanLine,
-  formatPrice,
-  getConnectionString,
-  getStripeAccountInfo,
-} from "../utils/format";
+import { formatPlanLine, formatPrice, getConnectionString } from "../utils/format";
 import { getPayKitConfig } from "../utils/get-config";
 import { capture } from "../utils/telemetry";
 
@@ -30,12 +25,11 @@ async function pushAction(options: { config?: string; cwd: string; yes?: boolean
 
   try {
     const connStr = getConnectionString(database as never);
-    const stripeAccount = await getStripeAccountInfo(config.options.provider.secretKey);
 
     p.log.info(
       `Connected\n` +
         `  Database ${picocolors.dim("·")} ${connStr}\n` +
-        `  Stripe   ${picocolors.dim("·")} ${stripeAccount.displayName} (${stripeAccount.mode})`,
+        `  Provider ${picocolors.dim("·")} ${config.options.provider.name} (${config.options.provider.id})`,
     );
 
     // 1. Apply pending migrations first — schema must exist before querying products

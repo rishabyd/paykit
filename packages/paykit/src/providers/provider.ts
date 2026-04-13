@@ -60,7 +60,10 @@ export interface ProviderSubscriptionResult {
   subscription?: ProviderSubscription | null;
 }
 
-export interface StripeRuntime {
+export interface PaymentProvider {
+  readonly id: string;
+  readonly name: string;
+
   upsertCustomer(data: {
     createTestClock?: boolean;
     id: string;
@@ -147,19 +150,8 @@ export interface StripeRuntime {
   }): Promise<{ url: string }>;
 }
 
-export interface StripeProviderOptions {
-  currency?: string;
-  secretKey: string;
-  webhookSecret: string;
-}
-
-export interface StripeProviderConfig extends StripeProviderOptions {
+export interface PayKitProviderConfig {
   id: string;
-  kind: "stripe";
-  /**
-   * Internal test hook so repo tests can stub the Stripe runtime without a network client.
-   */
-  runtime?: StripeRuntime;
+  name: string;
+  createAdapter(): PaymentProvider;
 }
-
-export type PayKitProvider = StripeProviderConfig;

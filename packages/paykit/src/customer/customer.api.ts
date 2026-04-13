@@ -69,7 +69,7 @@ export const customerPortal = definePayKitMethod(
       throw PayKitError.from("NOT_FOUND", PAYKIT_ERROR_CODES.PROVIDER_CUSTOMER_NOT_FOUND);
     }
 
-    const { url } = await ctx.paykit.stripe.createPortalSession({
+    const { url } = await ctx.paykit.provider.createPortalSession({
       providerCustomerId,
       returnUrl: ctx.input.returnUrl,
     });

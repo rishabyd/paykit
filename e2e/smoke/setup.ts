@@ -160,7 +160,10 @@ export async function createTestPayKit(): Promise<TestPayKit> {
   // Override createSubscription to use allow_incomplete. The default
   // payment_behavior: "default_incomplete" requires client-side payment
   // confirmation which isn't possible in automated tests.
-  ctx.stripe.createSubscription = async (data) => {
+  (ctx.provider as unknown as Record<string, unknown>).createSubscription = async (data: {
+    providerCustomerId: string;
+    providerPriceId: string;
+  }) => {
     const sub = await stripeClient.subscriptions.create({
       customer: data.providerCustomerId,
       items: [{ price: data.providerPriceId }],

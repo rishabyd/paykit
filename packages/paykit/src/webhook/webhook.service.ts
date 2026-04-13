@@ -211,7 +211,7 @@ export async function handleWebhook(
 ): Promise<{ received: true }> {
   return ctx.logger.trace.run("wh", async () => {
     const startTime = Date.now();
-    const events = await ctx.stripe.handleWebhook({
+    const events = await ctx.provider.handleWebhook({
       body: input.body,
       headers: input.headers,
     });

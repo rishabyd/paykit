@@ -108,20 +108,17 @@ describe("customer/service", () => {
       options: {
         provider: {
           id: "stripe",
-          kind: "stripe",
-          secretKey: "sk_test_123",
-          webhookSecret: "whsec_123",
+          name: "Stripe",
+          createAdapter: vi.fn(),
         },
         testing: { enabled: true },
       },
       plans: { plans: [] },
       provider: {
         id: "stripe",
-        kind: "stripe",
-        secretKey: "sk_test_123",
-        webhookSecret: "whsec_123",
+        name: "Stripe",
+        ...stripe,
       },
-      stripe,
     } as unknown as PayKitContext;
 
     const customer = await syncCustomerWithDefaults(ctx, {

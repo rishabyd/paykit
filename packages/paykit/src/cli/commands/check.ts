@@ -4,17 +4,11 @@ import * as p from "@clack/prompts";
 import { Command } from "commander";
 import { Pool } from "pg";
 import picocolors from "picocolors";
-import StripeSdk from "stripe";
 
 import { createContext } from "../../core/context";
 import { getPendingMigrationCount } from "../../database/index";
 import { dryRunSyncProducts } from "../../product/product-sync.service";
-import {
-  formatPlanLine,
-  formatPrice,
-  getConnectionString,
-  getStripeAccountInfo,
-} from "../utils/format";
+import { formatPlanLine, formatPrice, getConnectionString } from "../utils/format";
 import { getPayKitConfig } from "../utils/get-config";
 import { capture } from "../utils/telemetry";
 
@@ -40,7 +34,7 @@ async function checkAction(options: { config?: string; cwd: string }): Promise<v
     `Config\n` +
       `  ${picocolors.green("✔")} ${picocolors.dim(config.path)}\n` +
       `  ${picocolors.green("✔")} ${String(planCount)} product${planCount === 1 ? "" : "s"} defined\n` +
-      `  ${hasProvider ? picocolors.green("✔") : picocolors.red("✖")} ${hasProvider ? "Stripe provider configured" : "No provider configured"}`,
+      `  ${hasProvider ? picocolors.green("✔") : picocolors.red("✖")} ${hasProvider ? "Provider configured" : "No provider configured"}`,
   );
 
   if (!hasProvider) {
@@ -73,29 +67,9 @@ async function checkAction(options: { config?: string; cwd: string }): Promise<v
 
   p.log.info(`Database\n  ${picocolors.green("✔")} ${connStr}\n  ${migrationStatus}`);
 
-  const stripeAccount = await getStripeAccountInfo(config.options.provider.secretKey);
-
-  let webhookStatus: string;
-  try {
-    const client = new StripeSdk(config.options.provider.secretKey);
-    const endpoints = await client.webhookEndpoints.list({ limit: 100 });
-    const activeEndpoints = endpoints.data.filter((ep) => ep.status === "enabled");
-    if (activeEndpoints.length > 0) {
-      const lines = activeEndpoints.map((ep) =>
-        picocolors.dim(`- Webhook endpoint registered (${ep.url})`),
-      );
-      webhookStatus = lines.join("\n  ");
-    } else {
-      webhookStatus = picocolors.dim("- No webhook endpoint (use Stripe CLI for local testing)");
-    }
-  } catch {
-    webhookStatus = `${picocolors.dim("?")} Could not check webhook status`;
-  }
-
   p.log.info(
-    `Stripe\n` +
-      `  ${picocolors.green("✔")} ${stripeAccount.displayName} (${stripeAccount.mode})\n` +
-      `  ${webhookStatus}`,
+    `Provider\n` +
+      `  ${picocolors.green("✔")} ${config.options.provider.name} (${config.options.provider.id})`,
   );
 
   let hasIssues = pendingMigrations > 0;
