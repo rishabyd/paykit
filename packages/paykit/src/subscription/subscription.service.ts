@@ -13,7 +13,7 @@ import { upsertInvoiceRecord } from "../invoice/invoice.service";
 import { getDefaultPaymentMethod } from "../payment-method/payment-method.service";
 import {
   getDefaultProductInGroup,
-  getLatestProduct,
+  getProductByHash,
   getProductByProviderPriceId,
   withProviderInfo,
 } from "../product/product.service";
@@ -73,26 +73,23 @@ export async function subscribeToPlan(
 export async function loadSubscribeContext(ctx: PayKitContext, input: SubscribeInput) {
   const providerId = ctx.provider.id;
   const normalizedPlan = ctx.plans.planMap.get(input.planId);
-  const latestProduct = await getLatestProduct(ctx.database, input.planId);
-  const storedPlan = latestProduct ? withProviderInfo(latestProduct, providerId) : null;
+  const matchingProduct = normalizedPlan
+    ? await getProductByHash(ctx.database, input.planId, normalizedPlan.hash)
+    : null;
+  const storedPlan = matchingProduct ? withProviderInfo(matchingProduct, providerId) : null;
+
+  if (normalizedPlan && !storedPlan) {
+    ctx.logger.error(
+      { planId: input.planId, hash: normalizedPlan.hash },
+      `No synced version of plan "${input.planId}" matches the current schema. Run \`paykitjs push\` to sync.`,
+    );
+  }
 
   if (!normalizedPlan || !storedPlan) {
     throw PayKitError.from(
       "NOT_FOUND",
       PAYKIT_ERROR_CODES.PLAN_NOT_FOUND,
       `Plan "${input.planId}" not found`,
-    );
-  }
-
-  if (storedPlan.hash !== normalizedPlan.hash) {
-    ctx.logger.error(
-      { planId: input.planId },
-      `Plan "${input.planId}" is out of sync. Run \`paykitjs push\` to update.`,
-    );
-    throw PayKitError.from(
-      "INTERNAL_SERVER_ERROR",
-      PAYKIT_ERROR_CODES.PLAN_NOT_SYNCED,
-      `Plan "${input.planId}" schema has changed since last sync. Run \`paykitjs push\` to update.`,
     );
   }
 

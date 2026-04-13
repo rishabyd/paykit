@@ -90,6 +90,18 @@ export async function getLatestProduct(
   return result ?? null;
 }
 
+export async function getProductByHash(
+  database: PayKitDatabase,
+  id: string,
+  hash: string,
+): Promise<StoredProduct | null> {
+  const result = await database.query.product.findFirst({
+    where: and(eq(product.id, id), eq(product.hash, hash)),
+  });
+
+  return result ?? null;
+}
+
 export async function getLatestProductSnapshot(
   database: PayKitDatabase,
   id: string,

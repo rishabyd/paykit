@@ -7,8 +7,8 @@ export const PAYKIT_ERROR_CODES = defineErrorCodes({
   CUSTOMER_CREATE_FAILED: "Failed to create customer",
   CUSTOMER_UPDATE_FAILED: "Failed to update customer",
 
-  PLAN_NOT_FOUND: "Plan not found. Run: paykitjs push",
-  PLAN_NOT_SYNCED: "Plan is not synced with provider. Run: paykitjs push",
+  PLAN_NOT_FOUND: "Plan not found",
+  PLAN_NOT_SYNCED: "Plan is not synced with provider",
   PLAN_SYNC_FAILED: "Failed to sync plan",
 
   SUBSCRIPTION_CREATE_FAILED: "Failed to create subscription",
