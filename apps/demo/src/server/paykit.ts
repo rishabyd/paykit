@@ -1,5 +1,6 @@
 import { dash } from "@paykitjs/dash";
-import { stripe } from "@paykitjs/stripe";
+import { polar } from "@paykitjs/polar";
+// import { stripe } from "@paykitjs/stripe";
 import { createPayKit } from "paykitjs";
 
 import { env } from "@/env";
@@ -11,9 +12,14 @@ import { free, pro, ultra } from "./plans";
 export const paykit = createPayKit({
   testing: { enabled: true },
   database: pool,
-  provider: stripe({
-    secretKey: env.STRIPE_SECRET_KEY,
-    webhookSecret: env.STRIPE_WEBHOOK_SECRET,
+  // provider: stripe({
+  //   secretKey: env.STRIPE_SECRET_KEY,
+  //   webhookSecret: env.STRIPE_WEBHOOK_SECRET,
+  // }),
+  provider: polar({
+    accessToken: env.POLAR_ACCESS_TOKEN,
+    webhookSecret: env.POLAR_WEBHOOK_SECRET,
+    server: "sandbox",
   }),
   plans: [pro, ultra, free],
   plugins: [

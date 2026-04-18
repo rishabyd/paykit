@@ -13,7 +13,6 @@ export function AuthForm({ redirectTo }: { redirectTo: string }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
   const [isSignUp, setIsSignUp] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -28,7 +27,7 @@ export function AuthForm({ redirectTo }: { redirectTo: string }) {
         const result = await authClient.signUp.email({
           email,
           password,
-          name,
+          name: "Demo User",
         });
         if (result.error) {
           setError(result.error.message ?? "Sign up failed");
@@ -60,17 +59,6 @@ export function AuthForm({ redirectTo }: { redirectTo: string }) {
       </CardHeader>
       <CardContent>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-          {isSignUp ? (
-            <div className="grid gap-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Your name"
-                value={name}
-              />
-            </div>
-          ) : null}
           <div className="grid gap-2">
             <Label htmlFor="email">Email</Label>
             <Input
