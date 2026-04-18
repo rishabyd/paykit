@@ -4,10 +4,10 @@ import { definePayKitMethod, returnUrl } from "../api/define-route";
 import { PayKitError, PAYKIT_ERROR_CODES } from "../core/errors";
 import {
   getCustomerWithDetails,
-  getProviderCustomerIdForCustomer,
   hardDeleteCustomer,
   listCustomers,
   upsertCustomer as upsertCustomerService,
+  upsertProviderCustomer,
 } from "./customer.service";
 
 const upsertCustomerSchema = z.object({
@@ -60,14 +60,9 @@ export const customerPortal = definePayKitMethod(
     },
   },
   async (ctx) => {
-    const providerCustomerId = await getProviderCustomerIdForCustomer(ctx.paykit.database, {
+    const { providerCustomerId } = await upsertProviderCustomer(ctx.paykit, {
       customerId: ctx.customer.id,
-      providerId: ctx.paykit.provider.id,
     });
-
-    if (!providerCustomerId) {
-      throw PayKitError.from("NOT_FOUND", PAYKIT_ERROR_CODES.PROVIDER_CUSTOMER_NOT_FOUND);
-    }
 
     const { url } = await ctx.paykit.provider.createPortalSession({
       providerCustomerId,

@@ -119,7 +119,7 @@ function normalizeStripeSubscription(subscription: StripeSubscriptionWithExtras)
     currentPeriodEndAt: toDate(periodEnd),
     currentPeriodStartAt: toDate(periodStart),
     endedAt: toDate(subscription.ended_at),
-    providerPriceId: providerPriceId ?? null,
+    providerProduct: providerPriceId ? { priceId: providerPriceId } : null,
     providerSubscriptionId: subscription.id,
     providerSubscriptionScheduleId:
       (typeof subscription.schedule === "string"
@@ -597,7 +597,7 @@ export function createStripeProvider(client: StripeSdk, options: StripeOptions):
         cancel_url: data.cancelUrl ?? data.successUrl,
         client_reference_id: data.providerCustomerId,
         customer: data.providerCustomerId,
-        line_items: [{ price: data.providerPriceId, quantity: 1 }],
+        line_items: [{ price: data.providerProduct.priceId, quantity: 1 }],
         metadata: data.metadata,
         mode: "subscription",
         success_url: data.successUrl,
@@ -617,7 +617,7 @@ export function createStripeProvider(client: StripeSdk, options: StripeOptions):
     async createSubscription(data) {
       const createParams: StripeSdk.SubscriptionCreateParams = {
         customer: data.providerCustomerId,
-        items: [{ price: data.providerPriceId }],
+        items: [{ price: data.providerProduct.priceId }],
         payment_behavior: "default_incomplete",
         expand: ["latest_invoice.payment_intent"],
       };
@@ -660,7 +660,7 @@ export function createStripeProvider(client: StripeSdk, options: StripeOptions):
         items: [
           {
             id: currentItem.id,
-            price: data.providerPriceId,
+            price: data.providerProduct.priceId,
           },
         ],
         payment_behavior: "pending_if_incomplete",
@@ -687,7 +687,7 @@ export function createStripeProvider(client: StripeSdk, options: StripeOptions):
     },
 
     async scheduleSubscriptionChange(data) {
-      if (!data.providerPriceId) {
+      if (!data.providerProduct?.priceId) {
         throw PayKitError.from("BAD_REQUEST", PAYKIT_ERROR_CODES.PROVIDER_PRICE_REQUIRED);
       }
 
@@ -735,7 +735,7 @@ export function createStripeProvider(client: StripeSdk, options: StripeOptions):
             end_date: periodEndSeconds,
           },
           {
-            items: [{ price: data.providerPriceId, quantity: 1 }],
+            items: [{ price: data.providerProduct.priceId, quantity: 1 }],
             start_date: periodEndSeconds,
           },
         ],
@@ -821,35 +821,42 @@ export function createStripeProvider(client: StripeSdk, options: StripeOptions):
       await client.paymentMethods.detach(data.providerMethodId);
     },
 
-    async syncProduct(data) {
-      let providerProductId = data.existingProviderProductId;
-      if (!providerProductId) {
-        const stripeProduct = await client.products.create({
-          metadata: { paykit_product_id: data.id },
-          name: data.name,
-        });
-        providerProductId = stripeProduct.id;
-      } else {
-        await client.products.update(providerProductId, { name: data.name });
-      }
+    async syncProducts(data) {
+      const results = await Promise.all(
+        data.products.map(async (product) => {
+          let productId = product.existingProviderProduct?.productId ?? null;
+          if (!productId) {
+            const stripeProduct = await client.products.create({
+              metadata: { paykit_product_id: product.id },
+              name: product.name,
+            });
+            productId = stripeProduct.id;
+          } else {
+            await client.products.update(productId, { name: product.name });
+          }
 
-      if (data.existingProviderPriceId) {
-        return { providerPriceId: data.existingProviderPriceId, providerProductId };
-      }
+          const existingPriceId = product.existingProviderProduct?.priceId ?? null;
+          if (existingPriceId) {
+            return { id: product.id, providerProduct: { productId, priceId: existingPriceId } };
+          }
 
-      const priceParams: StripeSdk.PriceCreateParams = {
-        currency,
-        product: providerProductId,
-        unit_amount: data.priceAmount,
-      };
-      if (data.priceInterval) {
-        priceParams.recurring = {
-          interval: data.priceInterval as "month" | "year",
-        };
-      }
-      const stripePrice = await client.prices.create(priceParams);
+          const priceParams: StripeSdk.PriceCreateParams = {
+            currency,
+            product: productId,
+            unit_amount: product.priceAmount,
+          };
+          if (product.priceInterval) {
+            priceParams.recurring = {
+              interval: product.priceInterval as "month" | "year",
+            };
+          }
+          const stripePrice = await client.prices.create(priceParams);
 
-      return { providerPriceId: stripePrice.id, providerProductId };
+          return { id: product.id, providerProduct: { productId, priceId: stripePrice.id } };
+        }),
+      );
+
+      return { results };
     },
 
     async createInvoice(data) {

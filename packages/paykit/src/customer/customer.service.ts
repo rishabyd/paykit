@@ -182,17 +182,8 @@ export async function upsertCustomer(
 ): Promise<Customer> {
   const syncedCustomer = await syncCustomer(ctx.database, input);
   await ensureDefaultPlansForCustomer(ctx, syncedCustomer.id);
-  const { providerCustomer } = await upsertProviderCustomer(ctx, {
-    customerId: syncedCustomer.id,
-  });
 
-  return {
-    ...syncedCustomer,
-    provider: {
-      ...(syncedCustomer.provider ?? {}),
-      [ctx.provider.id]: providerCustomer,
-    },
-  };
+  return syncedCustomer;
 }
 
 export async function getCustomerById(
@@ -247,6 +238,7 @@ export async function getCustomerWithDetails(
 
   const subscriptionsByGroup = new Map<string, string[]>();
   for (const row of subRows) {
+    if (row.status === "scheduled") continue;
     const currentGroup = subscriptionsByGroup.get(row.planGroup) ?? [];
     currentGroup.push(row.planId);
     subscriptionsByGroup.set(row.planGroup, currentGroup);

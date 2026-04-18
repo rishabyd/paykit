@@ -76,7 +76,7 @@ describe("customer/service", () => {
       listActiveSubscriptions: vi.fn(),
       resumeSubscription: vi.fn(),
       scheduleSubscriptionChange: vi.fn(),
-      syncProduct: vi.fn(),
+      syncProducts: vi.fn(),
       updateSubscription: vi.fn(),
       createCustomer: vi.fn().mockResolvedValue({
         providerCustomer: {
@@ -173,7 +173,7 @@ describe("customer/service", () => {
       listActiveSubscriptions: vi.fn(),
       resumeSubscription: vi.fn(),
       scheduleSubscriptionChange: vi.fn(),
-      syncProduct: vi.fn(),
+      syncProducts: vi.fn(),
       updateSubscription: vi.fn(),
       createCustomer: vi.fn().mockResolvedValue({
         providerCustomer: {

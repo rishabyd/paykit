@@ -49,7 +49,6 @@ export interface ProviderSubscription {
   currentPeriodEndAt?: Date | null;
   currentPeriodStartAt?: Date | null;
   endedAt?: Date | null;
-  providerPriceId?: string | null;
   providerSubscriptionId: string;
   providerSubscriptionScheduleId?: string | null;
   status: string;
@@ -95,7 +94,7 @@ export interface PaymentProvider {
 
   createSubscriptionCheckout(data: {
     providerCustomerId: string;
-    providerPriceId: string;
+    providerProduct: Record<string, string>;
     successUrl: string;
     cancelUrl?: string;
     metadata?: Record<string, string>;
@@ -103,11 +102,11 @@ export interface PaymentProvider {
 
   createSubscription(data: {
     providerCustomerId: string;
-    providerPriceId: string;
+    providerProduct: Record<string, string>;
   }): Promise<ProviderSubscriptionResult>;
 
   updateSubscription(data: {
-    providerPriceId: string;
+    providerProduct: Record<string, string>;
     providerSubscriptionId: string;
   }): Promise<ProviderSubscriptionResult>;
 
@@ -118,7 +117,7 @@ export interface PaymentProvider {
   }): Promise<ProviderInvoice>;
 
   scheduleSubscriptionChange(data: {
-    providerPriceId?: string | null;
+    providerProduct?: Record<string, string> | null;
     providerSubscriptionScheduleId?: string | null;
     providerSubscriptionId: string;
   }): Promise<ProviderSubscriptionResult>;
@@ -140,14 +139,20 @@ export interface PaymentProvider {
 
   detachPaymentMethod(data: { providerMethodId: string }): Promise<void>;
 
-  syncProduct(data: {
-    id: string;
-    name: string;
-    priceAmount: number;
-    priceInterval?: string | null;
-    existingProviderProductId?: string | null;
-    existingProviderPriceId?: string | null;
-  }): Promise<{ providerProductId: string; providerPriceId: string }>;
+  syncProducts(data: {
+    products: Array<{
+      id: string;
+      name: string;
+      priceAmount: number;
+      priceInterval?: string | null;
+      existingProviderProduct?: Record<string, string> | null;
+    }>;
+  }): Promise<{
+    results: Array<{
+      id: string;
+      providerProduct: Record<string, string>;
+    }>;
+  }>;
 
   handleWebhook(data: {
     body: string;
@@ -164,6 +169,8 @@ export interface PaymentProvider {
     displayName: string;
     mode: string;
     webhookEndpoints?: Array<{ url: string; status: string }>;
+    errors?: string[];
+    customerSample?: Array<{ providerEmail: string; paykitCustomerId: string | null }>;
     error?: string;
   }>;
 }

@@ -150,11 +150,11 @@ export async function createTestPayKit(): Promise<TestPayKit> {
   // confirmation which isn't possible in automated tests.
   (ctx.provider as unknown as Record<string, unknown>).createSubscription = async (data: {
     providerCustomerId: string;
-    providerPriceId: string;
+    providerProduct: Record<string, string>;
   }) => {
     const sub = await stripeClient.subscriptions.create({
       customer: data.providerCustomerId,
-      items: [{ price: data.providerPriceId }],
+      items: [{ price: data.providerProduct.priceId }],
       payment_behavior: "allow_incomplete",
       expand: ["latest_invoice"],
     });

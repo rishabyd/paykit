@@ -39,5 +39,5 @@ export interface SubscriptionWithCatalog extends StoredSubscription {
   planName: string;
   priceAmount: number | null;
   priceInterval: string | null;
-  providerPriceId: string | null;
+  providerProduct: Record<string, string> | null;
 }

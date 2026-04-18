@@ -13,23 +13,18 @@ export interface StoredProductSnapshot {
 }
 
 export interface StoredProductWithProvider extends StoredProduct {
-  providerProductId: string | null;
-  providerPriceId: string | null;
+  providerProduct: Record<string, string> | null;
 }
 
 export function withProviderInfo(
   storedProduct: StoredProduct,
   providerId: string,
 ): StoredProductWithProvider {
-  const providerMap = (storedProduct.provider ?? {}) as Record<
-    string,
-    { productId: string; priceId: string | null }
-  >;
+  const providerMap = (storedProduct.provider ?? {}) as Record<string, Record<string, string>>;
   const providerInfo = providerMap[providerId];
   return {
     ...storedProduct,
-    providerProductId: providerInfo?.productId ?? null,
-    providerPriceId: providerInfo?.priceId ?? null,
+    providerProduct: providerInfo ?? null,
   };
 }
 
@@ -208,13 +203,13 @@ export async function getProviderProduct(
   database: PayKitDatabase,
   productInternalId: string,
   providerId: string,
-): Promise<{ productId: string; priceId: string | null } | null> {
+): Promise<Record<string, string> | null> {
   const row = await database.query.product.findFirst({
     where: eq(product.internalId, productInternalId),
   });
   if (!row) return null;
 
-  const providerMap = row.provider as Record<string, { productId: string; priceId: string | null }>;
+  const providerMap = row.provider as Record<string, Record<string, string>>;
   return providerMap[providerId] ?? null;
 }
 
@@ -223,8 +218,7 @@ export async function upsertProviderProduct(
   input: {
     productInternalId: string;
     providerId: string;
-    providerProductId: string;
-    providerPriceId?: string | null;
+    providerProduct: Record<string, string>;
   },
 ): Promise<void> {
   const existing = await database.query.product.findFirst({
@@ -232,14 +226,8 @@ export async function upsertProviderProduct(
   });
   if (!existing) return;
 
-  const providerMap = (existing.provider ?? {}) as Record<
-    string,
-    { productId: string; priceId: string | null }
-  >;
-  providerMap[input.providerId] = {
-    productId: input.providerProductId,
-    priceId: input.providerPriceId ?? null,
-  };
+  const providerMap = (existing.provider ?? {}) as Record<string, Record<string, string>>;
+  providerMap[input.providerId] = input.providerProduct;
 
   await database
     .update(product)
@@ -259,12 +247,12 @@ export async function getDefaultProductInGroup(
   return row ?? null;
 }
 
-export async function getProductByProviderPriceId(
+export async function getProductByProviderData(
   database: PayKitDatabase,
-  input: { providerId: string; providerPriceId: string },
+  input: { providerId: string; key: string; value: string },
 ): Promise<StoredProduct | null> {
   const row = await database.query.product.findFirst({
-    where: sql`${product.provider}->${input.providerId}->>'priceId' = ${input.providerPriceId}`,
+    where: sql`${product.provider}->${input.providerId}->>${input.key} = ${input.value}`,
   });
 
   return row ?? null;
