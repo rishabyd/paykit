@@ -373,12 +373,26 @@ html:not([data-anchor-scrolling]) {
   display: none;
 }
 
-/* Sidebar: fixed positioning so it never scrolls with content */
+/* Sticky positioning is broken inside the fumadocs grid. Use fixed instead. */
 @media (min-width: 768px) {
   [data-sidebar-placeholder] {
     position: fixed !important;
     width: var(--fd-sidebar-width) !important;
     inset-inline-start: max(0px, calc((100vw - var(--fd-layout-width, 97rem)) / 2)) !important;
+  }
+}
+
+[data-toc-popover] > header {
+  position: fixed !important;
+  top: var(--fd-docs-row-2, 0px) !important;
+  inset-inline-start: 0 !important;
+  inset-inline-end: 0 !important;
+  z-index: 10 !important;
+}
+
+@media (min-width: 768px) {
+  [data-toc-popover] > header {
+    inset-inline-start: var(--fd-sidebar-col, 0px) !important;
   }
 }
 
