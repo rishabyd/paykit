@@ -374,6 +374,15 @@ html:not([data-anchor-scrolling]) {
   display: none;
 }
 
+/* Sidebar: fixed positioning so it never scrolls with content */
+@media (min-width: 768px) {
+  [data-sidebar-placeholder] {
+    position: fixed !important;
+    width: var(--fd-sidebar-width) !important;
+    inset-inline-start: max(0px, calc((100vw - var(--fd-layout-width, 97rem)) / 2)) !important;
+  }
+}
+
 /* Fumadocs sidebar: edge-to-edge item rows with explicit horizontal padding */
 #nd-sidebar [data-radix-scroll-area-viewport],
 #nd-sidebar-mobile [data-radix-scroll-area-viewport] {

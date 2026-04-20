@@ -148,55 +148,53 @@ export default function Layout({ children }: { children: ReactNode }) {
   const tree = withCollapsibleCategories(source.pageTree);
 
   return (
-    <div className="h-dvh overflow-x-hidden overflow-y-auto scroll-smooth">
-      <DocsLayout
-        tree={tree}
-        themeSwitch={{
-          enabled: false,
-        }}
-        sidebar={{
-          footer: (
-            <div key="sidebar-footer" className="flex w-full items-center justify-between gap-2">
-              <Button
-                render={
-                  <a
-                    href={URLs.githubRepo}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="GitHub repository"
-                  />
-                }
-                nativeButton={false}
-                variant="ghost"
-                size="icon"
-                className="docs-sidebar-github-button text-fd-muted-foreground hover:text-fd-accent-foreground"
+    <DocsLayout
+      tree={tree}
+      themeSwitch={{
+        enabled: false,
+      }}
+      sidebar={{
+        footer: (
+          <div key="sidebar-footer" className="flex w-full items-center justify-between gap-2">
+            <Button
+              render={
+                <a
+                  href={URLs.githubRepo}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="GitHub repository"
+                />
+              }
+              nativeButton={false}
+              variant="ghost"
+              size="icon"
+              className="docs-sidebar-github-button text-fd-muted-foreground hover:text-fd-accent-foreground"
+            >
+              <Github className="size-4.5" aria-hidden="true" />
+            </Button>
+            <ThemeSwitcher />
+          </div>
+        ),
+      }}
+      nav={{
+        children: <SidebarCollapseButton key="sidebar-collapse" />,
+        title: (
+          <div className="flew-row flex items-center">
+            <Wordmark className="h-4.5" />
+            {VERSION_TEXT && (
+              <Badge
+                className="text-muted-foreground mb-0.5 ml-3 rounded-md px-1"
+                variant={"outline"}
               >
-                <Github className="size-4.5" aria-hidden="true" />
-              </Button>
-              <ThemeSwitcher />
-            </div>
-          ),
-        }}
-        nav={{
-          children: <SidebarCollapseButton key="sidebar-collapse" />,
-          title: (
-            <div className="flew-row flex items-center">
-              <Wordmark className="h-4.5" />
-              {VERSION_TEXT && (
-                <Badge
-                  className="text-muted-foreground mb-0.5 ml-3 rounded-md px-1"
-                  variant={"outline"}
-                >
-                  {VERSION_TEXT}
-                </Badge>
-              )}
-            </div>
-          ),
-          url: "/",
-        }}
-      >
-        {children}
-      </DocsLayout>
-    </div>
+                {VERSION_TEXT}
+              </Badge>
+            )}
+          </div>
+        ),
+        url: "/",
+      }}
+    >
+      {children}
+    </DocsLayout>
   );
 }
