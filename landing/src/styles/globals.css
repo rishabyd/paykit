@@ -453,6 +453,10 @@ html:not([data-anchor-scrolling]) {
   @apply h-11.5 py-0;
 }
 
+[data-toc-popover-trigger] > svg[role="progressbar"] circle {
+  r: 10;
+}
+
 #nd-sidebar [data-radix-scroll-area-viewport] :is(a, button).flex.flex-row.items-center.gap-2,
 #nd-sidebar-mobile
   [data-radix-scroll-area-viewport]
