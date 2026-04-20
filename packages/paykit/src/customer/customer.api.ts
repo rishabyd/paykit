@@ -1,7 +1,6 @@
 import * as z from "zod";
 
 import { definePayKitMethod, returnUrl } from "../api/define-route";
-import { PayKitError, PAYKIT_ERROR_CODES } from "../core/errors";
 import {
   getCustomerWithDetails,
   hardDeleteCustomer,
