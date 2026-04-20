@@ -179,7 +179,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       nav={{
         children: <SidebarCollapseButton key="sidebar-collapse" />,
         title: (
-          <div className="flew-row flex items-center">
+          <div className="flex flex-row items-center">
             <Wordmark className="h-4.5" />
             {VERSION_TEXT && (
               <Badge
