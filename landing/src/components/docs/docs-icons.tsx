@@ -13,7 +13,6 @@ import {
   Gauge,
   GitCompareArrows,
   LayoutDashboard,
-  Layers,
   Monitor,
   Package,
   ReceiptText,

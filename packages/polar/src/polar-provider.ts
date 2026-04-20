@@ -253,7 +253,7 @@ export function createPolarProvider(client: Polar, options: PolarOptions): Payme
       await client.subscriptions.update({
         id: data.providerSubscriptionId,
         subscriptionUpdate: {
-          productId: data.providerProduct?.productId!,
+          productId: data.providerProduct!.productId!,
           prorationBehavior: "next_period",
         },
       });

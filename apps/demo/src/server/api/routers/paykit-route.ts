@@ -1,9 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { paykit, type PayKit } from "@/lib/paykit";
 import { createTRPCRouter, publicProcedure } from "@/server/api/trpc";
 import { auth } from "@/server/auth";
-import { paykit, type PayKit } from "@/server/paykit";
 
 export const paykitRouter = createTRPCRouter({
   createCustomer: publicProcedure.mutation(async ({ ctx }) => {

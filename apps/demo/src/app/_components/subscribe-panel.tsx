@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { PayKit } from "@/lib/paykit";
 import { paykitClient } from "@/lib/paykit-client";
-import type { PayKit } from "@/server/paykit";
 import { api, type RouterOutputs } from "@/trpc/react";
 
 type SubscribePlanId = PayKit["planId"];

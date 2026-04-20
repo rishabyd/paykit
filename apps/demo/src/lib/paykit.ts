@@ -7,7 +7,7 @@ import { env } from "@/env";
 import { auth } from "@/server/auth";
 import { pool } from "@/server/db";
 
-import { free, pro, ultra } from "./plans";
+import { free, pro, ultra } from "./paykit-products";
 
 export const paykit = createPayKit({
   testing: { enabled: true },

@@ -12,7 +12,6 @@ import { CopyMarkdownButton } from "@/components/docs/copy-markdown-button";
 import { Features } from "@/components/docs/features";
 import { PackageInstall, PackageRun } from "@/components/docs/package-command";
 import { TocFooter } from "@/components/docs/toc-footer";
-import { URLs } from "@/lib/consts";
 import { source } from "@/lib/source";
 import { cn } from "@/lib/utils";
 
