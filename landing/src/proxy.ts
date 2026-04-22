@@ -3,10 +3,10 @@ import { type NextRequest, NextResponse } from "next/server";
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (pathname.endsWith(".mdx") && pathname.startsWith("/docs/")) {
-    const stripped = pathname.slice(0, -4);
+  if (pathname.endsWith(".md") && pathname.startsWith("/docs/")) {
+    const stripped = pathname.slice(0, -3);
     const url = request.nextUrl.clone();
-    url.pathname = `/llms.mdx${stripped}`;
+    url.pathname = `/llms.md${stripped}`;
     return NextResponse.rewrite(url);
   }
 
@@ -14,5 +14,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: "/docs/:path*.mdx",
+  matcher: "/docs/:path*.md",
 };

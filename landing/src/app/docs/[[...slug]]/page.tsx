@@ -56,7 +56,7 @@ export default async function Page({ params }: DocsPageProps) {
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
       <div className="-mt-6 border-b pb-5 mb-4">
-        <CopyMarkdownButton markdownUrl={`${page.url}.mdx`} />
+        <CopyMarkdownButton markdownUrl={`${page.url}.md`} />
       </div>
       <DocsBody>
         <MDXContent

@@ -109,7 +109,6 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.985 0 0);
   --sidebar: var(--background);
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
@@ -374,6 +373,47 @@ html:not([data-anchor-scrolling]) {
   display: none;
 }
 
+/* Sidebar: fixed positioning so it never scrolls with content, but only when expanded */
+@media (min-width: 768px) {
+  [data-sidebar-placeholder]:not(:has(#nd-sidebar[data-collapsed="true"])) {
+    position: fixed !important;
+    width: var(--fd-sidebar-width) !important;
+    inset-inline-start: max(0px, calc((100vw - var(--fd-layout-width, 97rem)) / 2)) !important;
+  }
+}
+
+@media (max-width: 767px) {
+  :root {
+    --subnav-height: 3.5rem;
+  }
+
+  #nd-subnav {
+    position: fixed !important;
+    top: var(--fd-docs-row-1, 0px) !important;
+    inset-inline-start: 0 !important;
+    inset-inline-end: 0 !important;
+  }
+
+  /* Compensate for fixed #nd-subnav leaving grid flow */
+  [data-toc-popover] {
+    margin-top: var(--subnav-height);
+  }
+}
+
+[data-toc-popover] > header {
+  position: fixed !important;
+  top: var(--fd-docs-row-2, 0px) !important;
+  inset-inline-start: 0 !important;
+  inset-inline-end: 0 !important;
+  z-index: 10 !important;
+}
+
+@media (min-width: 768px) {
+  [data-toc-popover] > header {
+    inset-inline-start: var(--fd-sidebar-col, 0px) !important;
+  }
+}
+
 /* Fumadocs sidebar: edge-to-edge item rows with explicit horizontal padding */
 #nd-sidebar [data-radix-scroll-area-viewport],
 #nd-sidebar-mobile [data-radix-scroll-area-viewport] {
@@ -416,6 +456,7 @@ html:not([data-anchor-scrolling]) {
 
 #nd-sidebar,
 #nd-sidebar-mobile {
+  background-color: var(--sidebar);
   --animate-fd-collapsible-down: fd-collapsible-down 220ms cubic-bezier(0.22, 1, 0.36, 1);
   --animate-fd-collapsible-up: fd-collapsible-up 170ms ease-out;
 }
