@@ -62,6 +62,8 @@ export function FooterSection() {
             {aiLinks.map((link, i) => (
               <Link
                 target="_blank"
+                aria-label={`Ask ${link.label} about PayKit`}
+                rel="noopener noreferrer"
                 href={link.href}
                 key={link.label}
                 className="text-foreground/30 hover:text-foreground/60 transition-colors"
