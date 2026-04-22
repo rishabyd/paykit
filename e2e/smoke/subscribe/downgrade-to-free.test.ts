@@ -8,6 +8,7 @@ import {
   expectProduct,
   expectSingleActivePlanInGroup,
   expectSingleScheduledPlanInGroup,
+  subscribeCustomer,
   type TestPayKit,
 } from "../setup";
 
@@ -28,11 +29,7 @@ describe("downgrade-to-free: pro → free", () => {
     customerId = customer.customerId;
 
     // Setup: subscribe to Pro
-    await t.paykit.subscribe({
-      customerId,
-      planId: "pro",
-      successUrl: "https://example.com/success",
-    });
+    await subscribeCustomer({ t, customerId, planId: "pro" });
   });
 
   afterAll(async () => {
@@ -41,11 +38,7 @@ describe("downgrade-to-free: pro → free", () => {
 
   it("downgrading to free schedules cancellation at period end", async () => {
     try {
-      await t.paykit.subscribe({
-        customerId,
-        planId: "free",
-        successUrl: "https://example.com/success",
-      });
+      await subscribeCustomer({ t, customerId, planId: "free" });
 
       // Pro is still active but canceled
       await expectProduct({
