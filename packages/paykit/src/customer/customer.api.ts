@@ -14,6 +14,7 @@ const upsertCustomerSchema = z.object({
   email: z.string().optional(),
   name: z.string().optional(),
   metadata: z.record(z.string(), z.string()).optional(),
+  upsertProviderCustomer: z.boolean().optional(),
 });
 
 const customerIdSchema = z.object({

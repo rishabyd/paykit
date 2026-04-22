@@ -184,10 +184,17 @@ export async function ensureDefaultPlansForCustomer(
 
 export async function upsertCustomer(
   ctx: PayKitContext,
-  input: Parameters<typeof syncCustomer>[1],
+  input: Parameters<typeof syncCustomer>[1] & { upsertProviderCustomer?: boolean },
 ): Promise<Customer> {
   const syncedCustomer = await syncCustomer(ctx.database, input);
   await ensureDefaultPlansForCustomer(ctx, syncedCustomer.id);
+
+  if (input.upsertProviderCustomer) {
+    await upsertProviderCustomer(ctx, {
+      customerId: syncedCustomer.id,
+      customerRow: syncedCustomer,
+    });
+  }
 
   return syncedCustomer;
 }
@@ -361,11 +368,12 @@ function providerCustomerNeedsSync(
 
 export async function upsertProviderCustomer(
   ctx: PayKitContext,
-  input: { customerId: string },
+  input: { customerId: string; customerRow?: Customer },
 ): Promise<{ customerId: string; providerCustomer: ProviderCustomer; providerCustomerId: string }> {
   const providerId = ctx.provider.id;
 
-  const existingCustomer = await getCustomerByIdOrThrow(ctx.database, input.customerId);
+  const existingCustomer =
+    input.customerRow ?? (await getCustomerByIdOrThrow(ctx.database, input.customerId));
   const existingProviderCustomer = getProviderCustomer(existingCustomer, providerId);
   const existingProviderCustomerId = existingProviderCustomer?.id ?? null;
 
