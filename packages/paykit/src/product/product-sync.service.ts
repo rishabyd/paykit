@@ -188,15 +188,25 @@ export async function syncProducts(ctx: PayKitContext): Promise<SyncProductResul
       })),
     });
 
+    const requestedIds = new Set(paidPlansToSync.map((p) => p.id));
+    const returnedIds = new Set(providerResults.results.map((r) => r.id));
+    const missingIds = [...requestedIds].filter((id) => !returnedIds.has(id));
+    if (missingIds.length > 0) {
+      throw new Error(
+        `Provider syncProducts did not return mappings for: ${missingIds.join(", ")}`,
+      );
+    }
+
     for (const providerResult of providerResults.results) {
       const plan = paidPlansToSync.find((p) => p.id === providerResult.id);
-      if (plan) {
-        await upsertProviderProduct(ctx.database, {
-          productInternalId: plan.storedProductInternalId,
-          providerId,
-          providerProduct: providerResult.providerProduct,
-        });
+      if (!plan) {
+        throw new Error(`Provider syncProducts returned unknown product id: ${providerResult.id}`);
       }
+      await upsertProviderProduct(ctx.database, {
+        productInternalId: plan.storedProductInternalId,
+        providerId,
+        providerProduct: providerResult.providerProduct,
+      });
     }
   }
 

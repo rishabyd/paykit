@@ -19,7 +19,7 @@ import { syncPaymentMethodByProviderCustomer } from "../../packages/paykit/src/p
 import { syncProducts } from "../../packages/paykit/src/product/product-sync.service";
 import { env } from "../env";
 import { loadHarness } from "./harness/index";
-import type { ProviderCapabilities, ProviderHarness } from "./harness/types";
+import type { ProviderHarness } from "./harness/types";
 
 const WEBHOOK_PORT = 4567;
 
@@ -338,21 +338,6 @@ export async function subscribeCustomer(input: {
   }
 }
 
-export function requireCapability(capability: keyof ProviderCapabilities): void {
-  if (!harness.capabilities[capability]) {
-    throw new SkipTestError(
-      `Test requires "${capability}" but provider "${harness.id}" does not support it`,
-    );
-  }
-}
-
-class SkipTestError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "SkipTestError";
-  }
-}
-
 export async function expectProduct(input: {
   database: PayKitDatabase;
   customerId: string;
@@ -668,7 +653,6 @@ export async function advanceTestClock(input: {
   frozenTime: Date;
   t: TestPayKit;
 }): Promise<void> {
-  requireCapability("testClocks");
   await input.t.paykit.advanceTestClock({
     customerId: input.customerId,
     frozenTime: input.frozenTime,

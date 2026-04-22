@@ -13,7 +13,9 @@ export function loadHarness(): ProviderHarness {
       return createStripeHarness();
     case "polar":
       return createPolarHarness();
-    default:
-      throw new Error(`Unknown provider: ${provider}. Supported: stripe, polar`);
+    default: {
+      const _exhaustive: never = provider;
+      throw new Error(`Unknown provider: ${String(_exhaustive)}`);
+    }
   }
 }

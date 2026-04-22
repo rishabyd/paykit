@@ -184,13 +184,13 @@ export async function checkActiveSubscriptionsOnOtherProvider(
 ): Promise<string[]> {
   const errors: string[] = [];
   const { subscription } = await import("../../database/schema");
-  const { and, eq, ne, isNotNull, count } = await import("drizzle-orm");
+  const { and, ne, isNotNull, inArray, count } = await import("drizzle-orm");
   const rows = await ctx.database
     .select({ count: count(), providerId: subscription.providerId })
     .from(subscription)
     .where(
       and(
-        eq(subscription.status, "active"),
+        inArray(subscription.status, ["active", "trialing", "past_due"]),
         isNotNull(subscription.providerId),
         ne(subscription.providerId, currentProviderId),
       ),

@@ -15,7 +15,7 @@ import {
   getDefaultProductInGroup,
   getProductByHash,
   getProductByInternalId,
-  getProductByProviderPriceId,
+  getProductByProviderData,
   getProductFeatures,
   withProviderInfo,
 } from "../product/product.service";

@@ -169,13 +169,17 @@ async function statusAction(options: {
   const hasIssues = needsMigration || needsSync || preflightErrors.length > 0;
 
   if (hasIssues) {
-    const action =
-      needsMigration && needsSync
-        ? "apply migrations and sync products"
-        : needsMigration
-          ? "apply migrations"
-          : "sync products";
-    p.outro(`Run ${picocolors.bold(pushCmd)} to ${action}`);
+    if (needsMigration || needsSync) {
+      const action =
+        needsMigration && needsSync
+          ? "apply migrations and sync products"
+          : needsMigration
+            ? "apply migrations"
+            : "sync products";
+      p.outro(`Run ${picocolors.bold(pushCmd)} to ${action}`);
+    } else {
+      p.outro("Resolve the preflight errors above before continuing");
+    }
     await printUpdateNotification(updateCheck, deps.getInstallCommand(pm, ["paykitjs@latest"]));
     if (options.throw) process.exit(1);
   } else {

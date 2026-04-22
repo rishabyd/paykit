@@ -123,6 +123,14 @@ export function createPolarProvider(client: Polar, options: PolarOptions): Payme
     name: "Polar",
 
     async createCustomer(data) {
+      if (!data.email) {
+        throw PayKitError.from(
+          "BAD_REQUEST",
+          PAYKIT_ERROR_CODES.CUSTOMER_CREATE_FAILED,
+          "Polar requires a non-empty email to create a customer",
+        );
+      }
+
       const customerMetadata = {
         ...data.metadata,
         paykitCustomerId: data.id,
@@ -130,7 +138,7 @@ export function createPolarProvider(client: Polar, options: PolarOptions): Payme
 
       try {
         const customer = await client.customers.create({
-          email: data.email ?? "",
+          email: data.email,
           name: data.name,
           metadata: customerMetadata,
         });
@@ -138,9 +146,11 @@ export function createPolarProvider(client: Polar, options: PolarOptions): Payme
         return {
           providerCustomer: { id: customer.id },
         };
-      } catch {
-        // Customer already exists with this email. Find and re-link.
-        const list = await client.customers.list({ query: data.email ?? "", limit: 1 });
+      } catch (error) {
+        if (!(error instanceof SDKValidationError)) throw error;
+
+        // Duplicate email — find and re-link the existing customer.
+        const list = await client.customers.list({ query: data.email, limit: 1 });
         const existing = list.result.items[0];
 
         if (!existing) {

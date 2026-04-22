@@ -19,7 +19,7 @@ export function createPolarHarness(): ProviderHarness {
     },
 
     createProviderConfig() {
-      return polar({ accessToken: accessToken!, webhookSecret: webhookSecret!, server: "sandbox" });
+      return polar({ accessToken, webhookSecret, server: "sandbox" });
     },
 
     async setupCustomerForDirectSubscription(_providerCustomerId: string) {

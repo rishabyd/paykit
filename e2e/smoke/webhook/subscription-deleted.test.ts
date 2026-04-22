@@ -47,7 +47,10 @@ describe.skipIf(harness.id !== "stripe")(
         .orderBy(desc(subscription.updatedAt))
         .limit(1);
       const providerData = subRows[0]?.providerData as { subscriptionId: string } | null;
-      providerSubscriptionId = providerData!.subscriptionId;
+      if (!providerData?.subscriptionId) {
+        throw new Error("Expected providerData with subscriptionId on subscription row");
+      }
+      providerSubscriptionId = providerData.subscriptionId;
     });
 
     afterAll(async () => {
