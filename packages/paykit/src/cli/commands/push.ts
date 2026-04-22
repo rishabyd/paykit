@@ -5,7 +5,9 @@ import { Command } from "commander";
 import picocolors from "picocolors";
 
 import {
+  checkActiveSubscriptionsOnOtherProvider,
   checkProvider,
+  checkProviderCustomers,
   createPool,
   formatProductDiffs,
   loadCliDeps,
@@ -59,6 +61,24 @@ async function pushAction(options: { config?: string; cwd: string; yes?: boolean
     s.message("Checking products");
     const { ctx, diffs } = await loadProductDiffs(config, deps);
     const hasChanges = diffs.some((d) => d.action !== "unchanged");
+
+    // Preflight checks
+    s.message("Running preflight checks");
+    const providerId = config.options.provider.id;
+    const [subscriptionErrors, customerErrors] = await Promise.all([
+      checkActiveSubscriptionsOnOtherProvider(ctx, providerId),
+      checkProviderCustomers(ctx, providerResult.customerSample),
+    ]);
+    const allErrors = [...providerResult.errors, ...subscriptionErrors, ...customerErrors];
+
+    if (allErrors.length > 0) {
+      s.stop("");
+      for (const err of allErrors) {
+        p.log.error(err);
+      }
+      p.cancel("Push blocked by preflight checks");
+      process.exit(1);
+    }
 
     s.stop("");
 

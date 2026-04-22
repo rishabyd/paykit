@@ -4,6 +4,7 @@ import {
   createTestCustomerWithPM,
   createTestPayKit,
   dumpStateOnFailure,
+  subscribeCustomer,
   type TestPayKit,
 } from "../setup";
 
@@ -35,11 +36,7 @@ describe("check-boolean: boolean feature access", () => {
       expect(freeCheck.allowed).toBe(false);
 
       // Subscribe to Pro (includes dashboard)
-      await t.paykit.subscribe({
-        customerId,
-        planId: "pro",
-        successUrl: "https://example.com/success",
-      });
+      await subscribeCustomer({ t, customerId, planId: "pro" });
 
       // On Pro — dashboard accessible
       const proCheck = await t.paykit.check({ customerId, featureId: "dashboard" });

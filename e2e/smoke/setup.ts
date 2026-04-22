@@ -1,8 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import path from "node:path";
 
-import { stripe } from "@paykitjs/stripe";
-import { config } from "dotenv";
 import { and, count, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { createPayKit, feature, plan } from "paykitjs";
 import { Pool } from "pg";
@@ -20,11 +17,14 @@ import {
 } from "../../packages/paykit/src/database/schema";
 import { syncPaymentMethodByProviderCustomer } from "../../packages/paykit/src/payment-method/payment-method.service";
 import { syncProducts } from "../../packages/paykit/src/product/product-sync.service";
-
-config({ path: path.resolve(import.meta.dirname, "../../.env") });
-config({ path: path.resolve(import.meta.dirname, "../../.env.local"), override: true });
+import { env } from "../env";
+import { loadHarness } from "./harness/index";
+import type { ProviderHarness } from "./harness/types";
 
 const WEBHOOK_PORT = 4567;
+
+// Provider harness — loaded once at module init based on PROVIDER env var
+export const harness: ProviderHarness = loadHarness();
 
 const messagesFeature = feature({ id: "messages", type: "metered" });
 const dashboardFeature = feature({ id: "dashboard", type: "boolean" });
@@ -80,7 +80,7 @@ type SmokePayKit = ReturnType<
   typeof createPayKit<{
     database: Pool;
     plans: typeof smokePlans;
-    provider: ReturnType<typeof stripe>;
+    provider: ReturnType<typeof harness.createProviderConfig>;
     testing: { enabled: true };
   }>
 >;
@@ -89,7 +89,7 @@ export interface TestPayKit {
   paykit: SmokePayKit;
   database: PayKitDatabase;
   ctx: PayKitContext;
-  stripeClient: Stripe;
+  harness: ProviderHarness;
   dbPath: string;
   server: Server;
   webhookRequests: CapturedWebhookRequest[];
@@ -106,137 +106,123 @@ export interface CapturedWebhookRequest {
 const activeSubscriptionStatuses = ["active", "trialing", "past_due"] as const;
 const presentSubscriptionStatuses = [...activeSubscriptionStatuses, "scheduled"] as const;
 
-// createTestPayKit
-
 export async function createTestPayKit(): Promise<TestPayKit> {
-  const secretKey = process.env.STRIPE_SECRET_KEY;
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secretKey || !webhookSecret) {
-    throw new Error("STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET must be set");
-  }
-
-  const stripeClient = new Stripe(secretKey);
+  harness.validateEnv();
 
   // 1. Create a fresh test database
   const dbName = `paykit_smoke_${String(Date.now())}`;
   const adminPool = new Pool({
-    connectionString: process.env.TEST_DATABASE_URL ?? "postgresql://localhost:5432/postgres",
+    connectionString: env.TEST_DATABASE_URL,
   });
   await adminPool.query(`CREATE DATABASE "${dbName}"`);
   await adminPool.end();
 
-  const dbUrl = (process.env.TEST_DATABASE_URL ?? "postgresql://localhost:5432/postgres").replace(
-    /\/[^/]*$/,
-    `/${dbName}`,
-  );
+  const dbUrl = env.TEST_DATABASE_URL.replace(/\/[^/]*$/, `/${dbName}`);
   const pool = new Pool({ connectionString: dbUrl });
 
   // 2. Run migrations
   await migrateDatabase(pool);
 
-  // 3. Create PayKit instance with real Stripe
-  const stripeProvider = stripe({ secretKey, webhookSecret });
+  // 3. Create PayKit instance with the active provider
+  const providerConfig = harness.createProviderConfig();
   const paykit = createPayKit({
     database: pool,
     plans: smokePlans,
-    provider: stripeProvider,
+    provider: providerConfig,
     testing: { enabled: true },
   });
 
   const ctx = await paykit.$context;
 
-  // Override createSubscription to use allow_incomplete. The default
-  // payment_behavior: "default_incomplete" requires client-side payment
-  // confirmation which isn't possible in automated tests.
-  (ctx.provider as unknown as Record<string, unknown>).createSubscription = async (data: {
-    providerCustomerId: string;
-    providerPriceId: string;
-  }) => {
-    const sub = await stripeClient.subscriptions.create({
-      customer: data.providerCustomerId,
-      items: [{ price: data.providerPriceId }],
-      payment_behavior: "allow_incomplete",
-      expand: ["latest_invoice"],
-    });
+  // Stripe-specific: Override createSubscription to use allow_incomplete.
+  // This allows direct subscription without client-side payment confirmation.
+  if (harness.id === "stripe") {
+    const secretKey = env.E2E_STRIPE_SK!;
+    const stripeClient = new Stripe(secretKey);
 
-    const firstItem = sub.items.data[0];
-    const periodStart = firstItem?.current_period_start ?? null;
-    const periodEnd = firstItem?.current_period_end ?? null;
-    const latestInvoice = sub.latest_invoice;
-    const invoice =
-      latestInvoice && typeof latestInvoice !== "string"
-        ? {
-            currency: latestInvoice.currency,
-            hostedUrl: latestInvoice.hosted_invoice_url ?? null,
-            periodEndAt: latestInvoice.period_end
-              ? new Date(latestInvoice.period_end * 1000)
-              : null,
-            periodStartAt: latestInvoice.period_start
-              ? new Date(latestInvoice.period_start * 1000)
-              : null,
-            providerInvoiceId: latestInvoice.id,
-            status: latestInvoice.status,
-            totalAmount: latestInvoice.total,
-          }
-        : null;
+    (ctx.provider as unknown as Record<string, unknown>).createSubscription = async (data: {
+      providerCustomerId: string;
+      providerProduct: Record<string, string>;
+    }) => {
+      const sub = await stripeClient.subscriptions.create({
+        customer: data.providerCustomerId,
+        items: [{ price: data.providerProduct.priceId }],
+        payment_behavior: "allow_incomplete",
+        expand: ["latest_invoice"],
+      });
 
-    return {
-      invoice,
-      paymentUrl: null,
-      subscription: {
-        cancelAtPeriodEnd: sub.cancel_at_period_end,
-        canceledAt: sub.canceled_at != null ? new Date(sub.canceled_at * 1000) : null,
-        currentPeriodEndAt: periodEnd != null ? new Date(periodEnd * 1000) : null,
-        currentPeriodStartAt: periodStart != null ? new Date(periodStart * 1000) : null,
-        endedAt: sub.ended_at != null ? new Date(sub.ended_at * 1000) : null,
-        providerSubscriptionId: sub.id,
-        providerSubscriptionScheduleId: null,
-        status: sub.status,
-      },
+      const firstItem = sub.items.data[0];
+      const periodStart = firstItem?.current_period_start ?? null;
+      const periodEnd = firstItem?.current_period_end ?? null;
+      const latestInvoice = sub.latest_invoice;
+      const inv =
+        latestInvoice && typeof latestInvoice !== "string"
+          ? {
+              currency: latestInvoice.currency,
+              hostedUrl: latestInvoice.hosted_invoice_url ?? null,
+              periodEndAt: latestInvoice.period_end
+                ? new Date(latestInvoice.period_end * 1000)
+                : null,
+              periodStartAt: latestInvoice.period_start
+                ? new Date(latestInvoice.period_start * 1000)
+                : null,
+              providerInvoiceId: latestInvoice.id,
+              status: latestInvoice.status,
+              totalAmount: latestInvoice.total,
+            }
+          : null;
+
+      return {
+        invoice: inv,
+        paymentUrl: null,
+        subscription: {
+          cancelAtPeriodEnd: sub.cancel_at_period_end,
+          canceledAt: sub.canceled_at != null ? new Date(sub.canceled_at * 1000) : null,
+          currentPeriodEndAt: periodEnd != null ? new Date(periodEnd * 1000) : null,
+          currentPeriodStartAt: periodStart != null ? new Date(periodStart * 1000) : null,
+          endedAt: sub.ended_at != null ? new Date(sub.ended_at * 1000) : null,
+          providerSubscriptionId: sub.id,
+          providerSubscriptionScheduleId: null,
+          status: sub.status,
+        },
+      };
     };
-  };
+  }
 
   // 4. Start webhook server BEFORE syncing products — product sync
-  // creates Stripe products which fires webhooks immediately
+  // creates provider products which fires webhooks immediately
   const webhookRequests: CapturedWebhookRequest[] = [];
-  const server = startWebhookServer(paykit, webhookRequests);
+  const server = await startWebhookServer(paykit, webhookRequests);
 
-  // 5. Sync products to Stripe
+  // 5. Sync products to provider
   await syncProducts(ctx);
 
   return {
     paykit,
     database: ctx.database,
     ctx,
-    stripeClient,
+    harness,
     dbPath: dbUrl,
     server,
     webhookRequests,
     cleanup: async () => {
       const customerRows = await ctx.database.query.customer.findMany();
-      const testClockIds = new Set<string>();
+      const idSet = new Set<string>();
       for (const row of customerRows) {
-        const providerMap = (row.provider ?? {}) as Record<
-          string,
-          { id: string; testClockId?: string }
-        >;
-        const testClockId = providerMap.stripe?.testClockId;
-        if (testClockId) {
-          testClockIds.add(testClockId);
-        }
+        const providerMap = (row.provider ?? {}) as Record<string, { id: string }>;
+        const entry = providerMap[harness.id];
+        if (entry?.id) idSet.add(entry.id);
       }
 
-      for (const testClockId of testClockIds) {
-        await stripeClient.testHelpers.testClocks.del(testClockId).catch(() => {});
-      }
+      await harness.cleanup({ providerCustomerIds: [...idSet] });
 
       // Wait for cleanup webhooks to arrive and be processed
       await new Promise((resolve) => setTimeout(resolve, 10_000));
-      server.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
       await pool.end();
       // Drop the test database
       const cleanupPool = new Pool({
-        connectionString: process.env.TEST_DATABASE_URL ?? "postgresql://localhost:5432/postgres",
+        connectionString: env.TEST_DATABASE_URL,
       });
       await cleanupPool.query(`DROP DATABASE IF EXISTS "${dbName}"`).catch(() => {});
       await cleanupPool.end();
@@ -245,33 +231,43 @@ export async function createTestPayKit(): Promise<TestPayKit> {
 }
 
 /**
- * Creates a PayKit customer. In testing mode this also provisions a Stripe
- * customer with a dedicated test clock. No payment method attached — first
- * paid subscribe will go through checkout.
+ * Creates a PayKit customer. In testing mode this also provisions a provider
+ * customer (with a test clock for Stripe). No payment method attached.
  */
 export async function createTestCustomer(input: {
   t: TestPayKit;
   customer: { id: string; email: string; name: string };
 }): Promise<{ customerId: string; providerCustomerId: string }> {
-  await input.t.paykit.upsertCustomer(input.customer);
+  const suffix = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const uniqueId = `${input.customer.id}_${suffix}`;
+  const uniqueEmail = input.customer.email.replace("@", `+${suffix}@`);
 
-  // Now the provider customer ID is stored in the customer's provider JSONB column
+  await input.t.paykit.upsertCustomer({
+    ...input.customer,
+    id: uniqueId,
+    email: uniqueEmail,
+    upsertProviderCustomer: true,
+  });
+
   const row = await input.t.database.query.customer.findFirst({
-    where: eq(customer.id, input.customer.id),
+    where: eq(customer.id, uniqueId),
   });
   const providerMap = (row?.provider ?? {}) as Record<string, { id: string }>;
-  const providerCustomerId = providerMap.stripe?.id;
+  const providerCustomerId = providerMap[input.t.harness.id]?.id;
 
   if (!providerCustomerId) {
-    throw new Error(`No Stripe provider customer ID found for customer "${input.customer.id}"`);
+    throw new Error(
+      `No ${input.t.harness.id} provider customer ID found for customer "${uniqueId}"`,
+    );
   }
 
-  return { customerId: input.customer.id, providerCustomerId };
+  return { customerId: uniqueId, providerCustomerId };
 }
 
 /**
- * Creates a PayKit customer with a pre-attached payment method.
- * Subscribe calls will go through the direct path (no checkout).
+ * Creates a PayKit customer ready for direct subscription (no checkout).
+ * For Stripe: attaches a test payment method.
+ * For providers without direct subscription support, this is equivalent to createTestCustomer.
  */
 export async function createTestCustomerWithPM(input: {
   t: TestPayKit;
@@ -279,29 +275,67 @@ export async function createTestCustomerWithPM(input: {
 }): Promise<{ customerId: string; providerCustomerId: string }> {
   const { customerId, providerCustomerId } = await createTestCustomer(input);
 
-  // Attach test payment method to Stripe customer
-  const pm = await input.t.stripeClient.paymentMethods.attach("pm_card_visa", {
-    customer: providerCustomerId,
-  });
-  await input.t.stripeClient.customers.update(providerCustomerId, {
-    invoice_settings: { default_payment_method: pm.id },
-  });
+  await input.t.harness.setupCustomerForDirectSubscription(providerCustomerId);
 
-  // Sync payment method into PayKit DB
-  await syncPaymentMethodByProviderCustomer(input.t.ctx.database, {
-    paymentMethod: {
-      providerMethodId: pm.id,
-      type: pm.type,
-      last4: pm.card?.last4,
-      expiryMonth: pm.card?.exp_month,
-      expiryYear: pm.card?.exp_year,
-      isDefault: true,
-    },
-    providerCustomerId,
-    providerId: input.t.ctx.provider.id,
-  });
+  // For Stripe, sync the payment method into PayKit DB
+  if (input.t.harness.id === "stripe") {
+    const secretKey = env.E2E_STRIPE_SK!;
+    const stripeClient = new Stripe(secretKey);
+    const pm = await stripeClient.paymentMethods.list({
+      customer: providerCustomerId,
+      type: "card",
+      limit: 1,
+    });
+    const method = pm.data[0];
+    if (method) {
+      await syncPaymentMethodByProviderCustomer(input.t.ctx.database, {
+        paymentMethod: {
+          providerMethodId: method.id,
+          type: method.type,
+          last4: method.card?.last4,
+          expiryMonth: method.card?.exp_month,
+          expiryYear: method.card?.exp_year,
+          isDefault: true,
+        },
+        providerCustomerId,
+        providerId: input.t.ctx.provider.id,
+      });
+    }
+  }
 
   return { customerId, providerCustomerId };
+}
+
+/**
+ * Subscribe a customer to a plan, handling checkout flow if the provider requires it.
+ * For providers with direct subscription (Stripe with PM): returns immediately.
+ * For providers requiring checkout (Polar): completes checkout via Playwright and waits for webhook.
+ */
+export async function subscribeCustomer(input: {
+  t: TestPayKit;
+  customerId: string;
+  planId: Parameters<SmokePayKit["subscribe"]>[0]["planId"];
+}): Promise<void> {
+  const beforeSubscribe = new Date();
+
+  const result = await input.t.paykit.subscribe({
+    customerId: input.customerId,
+    planId: input.planId,
+    successUrl: "https://example.com/success",
+  });
+
+  if (result.paymentUrl) {
+    // Checkout-based flow — automate checkout completion
+    await input.t.harness.completeCheckout(result.paymentUrl);
+
+    // Wait for the subscription to become active via webhook
+    await waitForWebhook({
+      database: input.t.database,
+      eventType: "subscription.updated",
+      after: beforeSubscribe,
+      timeout: 60_000,
+    });
+  }
 }
 
 export async function expectProduct(input: {
@@ -570,10 +604,10 @@ export async function expectExactMeteredBalance(input: {
   }
 }
 
-function startWebhookServer(
+async function startWebhookServer(
   paykit: Pick<SmokePayKit, "handler">,
   webhookRequests: CapturedWebhookRequest[],
-): Server {
+): Promise<Server> {
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const chunks: Buffer[] = [];
     for await (const chunk of req) {
@@ -610,7 +644,10 @@ function startWebhookServer(
     }
   });
 
-  server.listen(WEBHOOK_PORT);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(WEBHOOK_PORT, () => resolve());
+  });
   return server;
 }
 

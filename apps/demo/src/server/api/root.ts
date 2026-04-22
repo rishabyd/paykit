@@ -1,5 +1,5 @@
 import { autumnRouter } from "@/server/api/routers/autumn";
-import { paykitRouter } from "@/server/api/routers/paykit";
+import { paykitRouter } from "@/server/api/routers/paykit-route";
 import { postRouter } from "@/server/api/routers/post";
 import { createCallerFactory, createTRPCRouter } from "@/server/api/trpc";
 

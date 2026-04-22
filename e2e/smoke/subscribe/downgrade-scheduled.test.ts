@@ -7,6 +7,7 @@ import {
   expectProduct,
   expectSingleActivePlanInGroup,
   expectSingleScheduledPlanInGroup,
+  subscribeCustomer,
   type TestPayKit,
 } from "../setup";
 
@@ -27,17 +28,9 @@ describe("downgrade-scheduled: ultra → pro", () => {
     customerId = customer.customerId;
 
     // Setup: subscribe to Pro then upgrade to Ultra
-    await t.paykit.subscribe({
-      customerId,
-      planId: "pro",
-      successUrl: "https://example.com/success",
-    });
+    await subscribeCustomer({ t, customerId, planId: "pro" });
 
-    await t.paykit.subscribe({
-      customerId,
-      planId: "ultra",
-      successUrl: "https://example.com/success",
-    });
+    await subscribeCustomer({ t, customerId, planId: "ultra" });
   });
 
   afterAll(async () => {
@@ -46,11 +39,7 @@ describe("downgrade-scheduled: ultra → pro", () => {
 
   it("downgrading to a lower tier schedules the change at period end", async () => {
     try {
-      await t.paykit.subscribe({
-        customerId,
-        planId: "pro",
-        successUrl: "https://example.com/success",
-      });
+      await subscribeCustomer({ t, customerId, planId: "pro" });
 
       // Ultra is still active but marked as canceled
       await expectProduct({

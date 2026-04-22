@@ -2,15 +2,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { config } from "dotenv";
 import { Pool } from "pg";
 import { default as Stripe } from "stripe";
 
-process.env.PAYKIT_CLI = "1";
+import { env } from "../env";
 
-// Load env from repo root
-config({ path: path.resolve(import.meta.dirname, "../../.env") });
-config({ path: path.resolve(import.meta.dirname, "../../.env.local"), override: true });
+process.env.PAYKIT_CLI = "1";
 
 const packageRoot = path.resolve(import.meta.dirname, "../../packages/paykit");
 const createPayKitPath = path.resolve(packageRoot, "src/index.ts");
@@ -29,17 +26,17 @@ export interface CliTestFixture {
  * Postgres DB and real Stripe. Returns everything needed for cleanup.
  */
 export async function createCliFixture(_globalKey: string): Promise<CliTestFixture> {
-  const secretKey = process.env.STRIPE_SECRET_KEY;
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const secretKey = env.E2E_STRIPE_SK;
+  const webhookSecret = env.E2E_STRIPE_WHSEC;
   if (!secretKey || !webhookSecret) {
-    throw new Error("STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET must be set");
+    throw new Error("E2E_STRIPE_SK and E2E_STRIPE_WHSEC must be set");
   }
 
   const stripeClient = new Stripe(secretKey);
 
   // Create a fresh test database
   const dbName = `paykit_cli_${String(Date.now())}`;
-  const adminUrl = process.env.TEST_DATABASE_URL ?? "postgresql://localhost:5432/postgres";
+  const adminUrl = env.TEST_DATABASE_URL;
   const adminPool = new Pool({ connectionString: adminUrl });
   await adminPool.query(`CREATE DATABASE "${dbName}"`);
   await adminPool.end();

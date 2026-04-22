@@ -4,6 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "vitest run --config smoke/vitest.automated.config.ts",
+    "test:stripe": "PROVIDER=stripe vitest run --config smoke/vitest.automated.config.ts",
+    "test:polar": "PROVIDER=polar vitest run --config smoke/vitest.automated.config.ts",
     "test:watch": "vitest --config smoke/vitest.automated.config.ts",
     "test:manual": "vitest run --config smoke/vitest.manual.config.ts",
     "test:all": "vitest run --config smoke/vitest.config.ts",
@@ -12,13 +14,17 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
+    "@paykitjs/polar": "workspace:*",
     "@paykitjs/stripe": "workspace:*",
+    "@t3-oss/env-core": "^0.12.0",
     "@types/pg": "^8.18.0",
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.1",
     "paykitjs": "workspace:*",
     "pg": "^8.20.0",
+    "playwright": "^1.52.0",
     "stripe": "^19.1.0",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "zod": "^4.0.0"
   }
 }

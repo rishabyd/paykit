@@ -80,7 +80,7 @@ const labelBase =
 
 // ─── Component ───────────────────────────────────────────────────────
 
-export function NavigationBar({ stars }: { stars: number | null }) {
+export function NavigationBar({ stars: _stars }: { stars: number | null }) {
   const routerPathname = usePathname();
   const [pathname, setPathname] = useState("/");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);

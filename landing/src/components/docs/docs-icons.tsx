@@ -13,7 +13,6 @@ import {
   Gauge,
   GitCompareArrows,
   LayoutDashboard,
-  Layers,
   Monitor,
   Package,
   ReceiptText,
@@ -81,7 +80,7 @@ const pageIcons = {
   skills: <Bot className="docs-category-icon size-3! shrink-0" />,
 } as const;
 
-const enabledProviders = new Set(["stripe"]);
+const enabledProviders = new Set(["stripe", "polar"]);
 const soonPages = new Set(["drizzleadapter", "prismaadapter", "dashboard"]);
 
 const providerPageIcons = {

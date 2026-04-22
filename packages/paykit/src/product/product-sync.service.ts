@@ -95,6 +95,15 @@ export async function syncProducts(ctx: PayKitContext): Promise<SyncProductResul
     await upsertFeature(ctx.database, schemaFeature);
   }
 
+  const paidPlansToSync: Array<{
+    id: string;
+    name: string;
+    priceAmount: number;
+    priceInterval: string;
+    existingProviderProduct: Record<string, string> | null;
+    storedProductInternalId: string;
+  }> = [];
+
   for (const plan of ctx.plans.plans) {
     const existing = await getLatestProductSnapshot(ctx.database, plan.id);
     const existingProviderProduct = existing
@@ -151,24 +160,13 @@ export async function syncProducts(ctx: PayKitContext): Promise<SyncProductResul
     }
 
     if (storedProduct.priceAmount !== null && storedProduct.priceInterval !== null) {
-      const shouldReuseExistingPriceId =
-        action !== "created" && existingProviderProduct?.priceId !== undefined;
-      const providerResult = await ctx.provider.syncProduct({
-        existingProviderPriceId: shouldReuseExistingPriceId
-          ? (existingProviderProduct?.priceId ?? null)
-          : null,
-        existingProviderProductId: existingProviderProduct?.productId ?? null,
+      paidPlansToSync.push({
+        existingProviderProduct: existingProviderProduct ?? null,
         id: plan.id,
         name: plan.name,
         priceAmount: storedProduct.priceAmount,
         priceInterval: storedProduct.priceInterval,
-      });
-
-      await upsertProviderProduct(ctx.database, {
-        productInternalId: storedProduct.internalId,
-        providerId,
-        providerProductId: providerResult.providerProductId,
-        providerPriceId: providerResult.providerPriceId,
+        storedProductInternalId: storedProduct.internalId,
       });
     }
 
@@ -177,6 +175,49 @@ export async function syncProducts(ctx: PayKitContext): Promise<SyncProductResul
       id: plan.id,
       version: storedProduct.version,
     });
+  }
+
+  if (paidPlansToSync.length > 0) {
+    const providerResults = await ctx.provider.syncProducts({
+      products: paidPlansToSync.map((p) => ({
+        existingProviderProduct: p.existingProviderProduct,
+        id: p.id,
+        name: p.name,
+        priceAmount: p.priceAmount,
+        priceInterval: p.priceInterval,
+      })),
+    });
+
+    const requestedIds = new Set(paidPlansToSync.map((p) => p.id));
+    const resultById = new Map<string, (typeof providerResults.results)[number]>();
+    for (const r of providerResults.results) {
+      if (resultById.has(r.id)) {
+        throw PayKitError.from(
+          "INTERNAL_SERVER_ERROR",
+          PAYKIT_ERROR_CODES.PLAN_SYNC_FAILED,
+          `Provider syncProducts returned duplicate mapping for id: ${r.id}`,
+        );
+      }
+      resultById.set(r.id, r);
+    }
+    const missingIds = [...requestedIds].filter((id) => !resultById.has(id));
+    if (missingIds.length > 0 || resultById.size !== requestedIds.size) {
+      throw PayKitError.from(
+        "INTERNAL_SERVER_ERROR",
+        PAYKIT_ERROR_CODES.PLAN_SYNC_FAILED,
+        `Provider syncProducts returned invalid mapping: missing=[${missingIds.join(", ")}], expected=${String(requestedIds.size)}, got=${String(resultById.size)}`,
+      );
+    }
+
+    for (const [, providerResult] of resultById) {
+      const plan = paidPlansToSync.find((p) => p.id === providerResult.id);
+      if (!plan) continue;
+      await upsertProviderProduct(ctx.database, {
+        productInternalId: plan.storedProductInternalId,
+        providerId,
+        providerProduct: providerResult.providerProduct,
+      });
+    }
   }
 
   return results;

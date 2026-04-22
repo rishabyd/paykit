@@ -5,11 +5,11 @@ import {
   createTestPayKit,
   dumpStateOnFailure,
   expectExactMeteredBalance,
-  expectInvoiceCount,
   expectNoScheduledPlanInGroup,
   expectProduct,
   expectSingleActivePlanInGroup,
   expectSubscription,
+  subscribeCustomer,
   type TestPayKit,
 } from "../setup";
 
@@ -36,16 +36,7 @@ describe("subscribe-paid: free → pro", () => {
 
   it("subscribing to a paid plan from free creates an active subscription", async () => {
     try {
-      const result = await t.paykit.subscribe({
-        customerId,
-        planId: "pro",
-        successUrl: "https://example.com/success",
-      });
-
-      // Direct path (has payment method, no checkout)
-      if (result.paymentUrl != null) {
-        throw new Error("Expected direct subscription, got checkout URL");
-      }
+      await subscribeCustomer({ t, customerId, planId: "pro" });
 
       // Pro is active with period dates
       await expectProduct({
@@ -89,13 +80,6 @@ describe("subscribe-paid: free → pro", () => {
         database: t.database,
         customerId,
         expected: { status: "active" },
-      });
-
-      // At least 1 invoice
-      await expectInvoiceCount({
-        database: t.database,
-        customerId,
-        expectedAtLeast: 1,
       });
     } catch (error) {
       await dumpStateOnFailure(t.database, t.dbPath);

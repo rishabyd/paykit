@@ -1,6 +1,6 @@
 {
   "name": "@paykitjs/dash",
-  "version": "0.0.3",
+  "version": "0.0.4-canary.0",
   "private": true,
   "description": "Embedded dashboard plugin for PayKit",
   "license": "MIT",

@@ -15,7 +15,7 @@ import {
   getDefaultProductInGroup,
   getProductByHash,
   getProductByInternalId,
-  getProductByProviderPriceId,
+  getProductByProviderData,
   getProductFeatures,
   withProviderInfo,
 } from "../product/product.service";
@@ -114,7 +114,7 @@ export async function loadSubscribeContext(ctx: PayKitContext, input: SubscribeI
 
   const isFreeTarget = storedPlan.priceAmount === null;
   const isPaidTarget = !isFreeTarget;
-  if (isPaidTarget && !storedPlan.providerPriceId) {
+  if (isPaidTarget && !storedPlan.providerProduct) {
     throw PayKitError.from(
       "INTERNAL_SERVER_ERROR",
       PAYKIT_ERROR_CODES.PLAN_NOT_SYNCED,
@@ -333,12 +333,21 @@ export async function prepareSubscribeCheckoutCompleted(
     productInternalId: productInternalId ?? undefined,
     successUrl: "https://paykit.invalid/checkout",
   });
-  if (subCtx.storedPlan.providerPriceId !== checkoutSubscription.providerPriceId) {
-    throw PayKitError.from(
-      "BAD_REQUEST",
-      PAYKIT_ERROR_CODES.PROVIDER_WEBHOOK_INVALID,
-      `Checkout price mismatch for plan "${planId}"`,
-    );
+  const checkoutProviderProduct = checkoutSubscription.providerProduct;
+  const storedProviderProduct = subCtx.storedPlan.providerProduct;
+  if (checkoutProviderProduct && storedProviderProduct) {
+    const checkoutKeys = Object.keys(checkoutProviderProduct);
+    const storedKeys = Object.keys(storedProviderProduct);
+    const mismatch =
+      checkoutKeys.length !== storedKeys.length ||
+      checkoutKeys.some((key) => checkoutProviderProduct[key] !== storedProviderProduct[key]);
+    if (mismatch) {
+      throw PayKitError.from(
+        "BAD_REQUEST",
+        PAYKIT_ERROR_CODES.PROVIDER_WEBHOOK_INVALID,
+        `Checkout product mismatch for plan "${planId}"`,
+      );
+    }
   }
 
   const completion = {
@@ -531,11 +540,19 @@ export async function applySubscriptionWebhookAction(
     providerId: ctx.provider.id,
     providerSubscriptionId: action.data.subscription.providerSubscriptionId,
   });
-  const storedProduct = action.data.subscription.providerPriceId
-    ? await getProductByProviderPriceId(ctx.database, {
-        providerId: ctx.provider.id,
-        providerPriceId: action.data.subscription.providerPriceId,
-      })
+  const providerProduct = action.data.subscription.providerProduct;
+  const storedProduct = providerProduct
+    ? await (async () => {
+        for (const [key, value] of Object.entries(providerProduct)) {
+          const found = await getProductByProviderData(ctx.database, {
+            providerId: ctx.provider.id,
+            key,
+            value,
+          });
+          if (found) return found;
+        }
+        return null;
+      })()
     : null;
   const normalizedPlan = storedProduct ? (ctx.plans.planMap.get(storedProduct.id) ?? null) : null;
 
@@ -805,7 +822,7 @@ async function handleInitialSubscribe(
 
   const providerResult = await ctx.provider.createSubscription({
     providerCustomerId: subCtx.providerCustomerId,
-    providerPriceId: subCtx.storedPlan.providerPriceId!,
+    providerProduct: subCtx.storedPlan.providerProduct!,
   });
 
   await ctx.database.transaction(async (tx) => {
@@ -862,7 +879,7 @@ async function handleLocalPlanSwitch(
 
   const providerResult = await ctx.provider.createSubscription({
     providerCustomerId: subCtx.providerCustomerId,
-    providerPriceId: subCtx.storedPlan.providerPriceId!,
+    providerProduct: subCtx.storedPlan.providerProduct!,
   });
 
   await ctx.database.transaction(async (tx) => {
@@ -957,7 +974,7 @@ async function handleScheduledDowngrade(
   }
 
   const providerResult = await ctx.provider.scheduleSubscriptionChange({
-    providerPriceId: subCtx.storedPlan.providerPriceId!,
+    providerProduct: subCtx.storedPlan.providerProduct!,
     providerSubscriptionId: activeSubscriptionRef.subscriptionId,
     providerSubscriptionScheduleId: activeSubscriptionRef.subscriptionScheduleId,
   });
@@ -1010,12 +1027,8 @@ async function handleUpgrade(
     throw PayKitError.from("INTERNAL_SERVER_ERROR", PAYKIT_ERROR_CODES.SUBSCRIPTION_CREATE_FAILED);
   }
 
-  if (subCtx.shouldUseCheckout) {
-    return createCheckoutSubscribe(ctx, subCtx);
-  }
-
   const providerResult = await ctx.provider.updateSubscription({
-    providerPriceId: subCtx.storedPlan.providerPriceId!,
+    providerProduct: subCtx.storedPlan.providerProduct!,
     providerSubscriptionId: activeSubscriptionRef.subscriptionId,
   });
 
@@ -1060,7 +1073,7 @@ async function createCheckoutSubscribe(
       paykit_product_internal_id: subCtx.storedPlan.internalId,
     },
     providerCustomerId: subCtx.providerCustomerId,
-    providerPriceId: subCtx.storedPlan.providerPriceId!,
+    providerProduct: subCtx.storedPlan.providerProduct!,
     successUrl: subCtx.successUrl,
   });
 
@@ -1187,7 +1200,7 @@ function addResetInterval(date: Date, resetInterval: string): Date {
   return next;
 }
 
-type ProviderProductMap = Record<string, { productId: string; priceId: string | null }>;
+type ProviderProductMap = Record<string, Record<string, string>>;
 
 export async function warnOnDuplicateActiveSubscriptionGroups(
   ctx: PayKitContext,
@@ -1241,6 +1254,7 @@ function mapJoinRowToSubscriptionWithCatalog(row: {
   product: typeof product.$inferSelect;
 }): SubscriptionWithCatalog {
   const providerMap = row.product.provider as ProviderProductMap | null;
+  const providerId = row.subscription.providerId;
   return {
     ...row.subscription,
     planGroup: row.product.group,
@@ -1249,7 +1263,7 @@ function mapJoinRowToSubscriptionWithCatalog(row: {
     planName: row.product.name,
     priceAmount: row.product.priceAmount,
     priceInterval: row.product.priceInterval,
-    providerPriceId: Object.values(providerMap ?? {})[0]?.priceId ?? null,
+    providerProduct: (providerId ? providerMap?.[providerId] : null) ?? null,
   };
 }
 

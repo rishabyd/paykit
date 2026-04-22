@@ -5,6 +5,7 @@ import {
   createTestPayKit,
   dumpStateOnFailure,
   expectExactMeteredBalance,
+  subscribeCustomer,
   type TestPayKit,
 } from "../setup";
 
@@ -25,11 +26,7 @@ describe("check-metered: metered feature balance and usage reporting", () => {
     customerId = customer.customerId;
 
     // Subscribe to Pro (500 messages/month)
-    await t.paykit.subscribe({
-      customerId,
-      planId: "pro",
-      successUrl: "https://example.com/success",
-    });
+    await subscribeCustomer({ t, customerId, planId: "pro" });
   });
 
   afterAll(async () => {

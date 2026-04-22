@@ -103,6 +103,8 @@ export async function checkDatabase(
 
 export interface ProviderCheckResult {
   account: { ok: true; displayName: string; mode: string } | { ok: false; message: string };
+  customerSample: Array<{ providerEmail: string; paykitCustomerId: string | null }>;
+  errors: string[];
   webhookEndpoints: Array<{ url: string; status: string }> | null;
 }
 
@@ -116,6 +118,8 @@ export async function checkProvider(
     if (!result) {
       return {
         account: { ok: true, displayName: providerConfig.name, mode: "unknown" },
+        customerSample: [],
+        errors: [],
         webhookEndpoints: null,
       };
     }
@@ -123,21 +127,85 @@ export async function checkProvider(
     if (result.ok) {
       return {
         account: { ok: true, displayName: result.displayName, mode: result.mode },
+        customerSample: result.customerSample ?? [],
+        errors: result.errors ?? [],
         webhookEndpoints: result.webhookEndpoints ?? null,
       };
     }
 
     return {
       account: { ok: false, message: result.error ?? "Provider check failed" },
+      customerSample: [],
+      errors: result.errors ?? [],
       webhookEndpoints: null,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Provider check failed";
     return {
       account: { ok: false, message },
+      customerSample: [],
+      errors: [],
       webhookEndpoints: null,
     };
   }
+}
+
+export async function checkProviderCustomers(
+  ctx: PayKitContext,
+  customerSample: ProviderCheckResult["customerSample"],
+): Promise<string[]> {
+  if (customerSample.length === 0) return [];
+
+  const message = `${ctx.provider.name} account has existing customers that are not synced with PayKit. Use a fresh ${ctx.provider.name} account or remove existing customers from it before proceeding.`;
+
+  const hasUnmanaged = customerSample.some((s) => !s.paykitCustomerId);
+  if (hasUnmanaged) return [message];
+
+  const paykitIds = [
+    ...new Set(
+      customerSample.map((s) => s.paykitCustomerId).filter((id): id is string => id !== null),
+    ),
+  ];
+
+  if (paykitIds.length > 0) {
+    const { customer } = await import("../../database/schema");
+    const { inArray } = await import("drizzle-orm");
+    const rows = await ctx.database
+      .select({ id: customer.id })
+      .from(customer)
+      .where(inArray(customer.id, paykitIds));
+    if (rows.length < paykitIds.length) return [message];
+  }
+
+  return [];
+}
+
+export async function checkActiveSubscriptionsOnOtherProvider(
+  ctx: PayKitContext,
+  currentProviderId: string,
+): Promise<string[]> {
+  const errors: string[] = [];
+  const { subscription } = await import("../../database/schema");
+  const { and, ne, isNotNull, inArray, count } = await import("drizzle-orm");
+  const rows = await ctx.database
+    .select({ count: count(), providerId: subscription.providerId })
+    .from(subscription)
+    .where(
+      and(
+        inArray(subscription.status, ["active", "trialing", "past_due"]),
+        isNotNull(subscription.providerId),
+        ne(subscription.providerId, currentProviderId),
+      ),
+    )
+    .groupBy(subscription.providerId);
+  for (const row of rows) {
+    if (row.count > 0 && row.providerId) {
+      errors.push(
+        `Found ${String(row.count)} subscription${row.count === 1 ? "" : "s"} (active, trialing, or past_due) linked to "${row.providerId}" but current provider is "${currentProviderId}". Existing subscriptions must be canceled before switching providers.`,
+      );
+    }
+  }
+  return errors;
 }
 
 export async function loadProductDiffs(

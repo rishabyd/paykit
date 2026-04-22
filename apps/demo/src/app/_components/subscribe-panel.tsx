@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { PayKit } from "@/lib/paykit";
 import { paykitClient } from "@/lib/paykit-client";
-import type { PayKit } from "@/server/paykit";
 import { api, type RouterOutputs } from "@/trpc/react";
 
 type SubscribePlanId = PayKit["planId"];
@@ -170,7 +170,7 @@ function TestClockPanel() {
           {testClock.data ? <Badge variant="outline">{testClock.data.status}</Badge> : null}
         </CardTitle>
         <CardDescription>
-          Advance the logged-in customer through Stripe billing cycles without leaving the demo.
+          Advance the logged-in customer through billing cycles without leaving the demo.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
@@ -191,7 +191,7 @@ function TestClockPanel() {
               <span className="text-lg font-semibold">
                 {formatDateTime(testClock.data.frozenTime)}
               </span>
-              <span className="text-muted-foreground text-sm">Stripe time</span>
+              <span className="text-muted-foreground text-sm">Test clock</span>
             </div>
             <div className="flex flex-wrap gap-2">
               {actions.map((action) => (

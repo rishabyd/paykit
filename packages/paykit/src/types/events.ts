@@ -24,7 +24,7 @@ export interface NormalizedSubscription {
   currentPeriodEndAt?: Date | null;
   currentPeriodStartAt?: Date | null;
   endedAt?: Date | null;
-  providerPriceId?: string | null;
+  providerProduct?: Record<string, string> | null;
   providerSubscriptionId: string;
   providerSubscriptionScheduleId?: string | null;
   status: string;

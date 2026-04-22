@@ -5,8 +5,10 @@ import { Command } from "commander";
 import picocolors from "picocolors";
 
 import {
+  checkActiveSubscriptionsOnOtherProvider,
   checkDatabase,
   checkProvider,
+  checkProviderCustomers,
   createPool,
   formatProductDiffs,
   loadCliDeps,
@@ -85,6 +87,8 @@ async function statusAction(options: {
 
   const pendingMigrations = dbResult.pendingMigrations;
 
+  let preflightErrors: string[] = [...providerResult.errors];
+
   let webhookStatus: string;
   if (providerResult.webhookEndpoints === null) {
     webhookStatus = `${picocolors.dim("?")} Could not check webhook status`;
@@ -106,6 +110,13 @@ async function statusAction(options: {
     productsBlock = `Products\n  ${picocolors.dim("?")} Cannot check sync status until migrations are applied`;
   } else {
     const { ctx, diffs } = await loadProductDiffs(config, deps);
+
+    const providerId = config.options.provider.id;
+    const [subscriptionErrors, customerErrors] = await Promise.all([
+      checkActiveSubscriptionsOnOtherProvider(ctx, providerId),
+      checkProviderCustomers(ctx, providerResult.customerSample),
+    ]);
+    preflightErrors = [...preflightErrors, ...subscriptionErrors, ...customerErrors];
 
     if (diffs.length === 0) {
       productsBlock = `Products\n  ${picocolors.dim("No products defined")}`;
@@ -149,17 +160,26 @@ async function statusAction(options: {
 
   p.log.info(productsBlock);
 
+  if (preflightErrors.length > 0) {
+    const errorLines = preflightErrors.map((err) => `  ${picocolors.red("✖")} ${err}`);
+    p.log.error(`Preflight\n${errorLines.join("\n")}`);
+  }
+
   const needsMigration = pendingMigrations > 0;
-  const hasIssues = needsMigration || needsSync;
+  const hasIssues = needsMigration || needsSync || preflightErrors.length > 0;
 
   if (hasIssues) {
-    const action =
-      needsMigration && needsSync
-        ? "apply migrations and sync products"
-        : needsMigration
-          ? "apply migrations"
-          : "sync products";
-    p.outro(`Run ${picocolors.bold(pushCmd)} to ${action}`);
+    if (needsMigration || needsSync) {
+      const action =
+        needsMigration && needsSync
+          ? "apply migrations and sync products"
+          : needsMigration
+            ? "apply migrations"
+            : "sync products";
+      p.outro(`Run ${picocolors.bold(pushCmd)} to ${action}`);
+    } else {
+      p.outro("Resolve the preflight errors above before continuing");
+    }
     await printUpdateNotification(updateCheck, deps.getInstallCommand(pm, ["paykitjs@latest"]));
     if (options.throw) process.exit(1);
   } else {

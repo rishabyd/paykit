@@ -11,6 +11,7 @@ import {
   expectProduct,
   expectSingleActivePlanInGroup,
   replayWebhookRequest,
+  subscribeCustomer,
   type TestPayKit,
   waitForForwardedWebhookRequest,
   waitForWebhook,
@@ -41,11 +42,7 @@ describe("duplicate-webhook: same event delivered twice", () => {
     try {
       const beforeSubscribe = new Date();
 
-      await t.paykit.subscribe({
-        customerId,
-        planId: "pro",
-        successUrl: "https://example.com/success",
-      });
+      await subscribeCustomer({ t, customerId, planId: "pro" });
 
       const subscriptionWebhook = await waitForWebhook({
         after: beforeSubscribe,

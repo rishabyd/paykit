@@ -184,21 +184,19 @@ export async function ensureDefaultPlansForCustomer(
 
 export async function upsertCustomer(
   ctx: PayKitContext,
-  input: Parameters<typeof syncCustomer>[1],
+  input: Parameters<typeof syncCustomer>[1] & { upsertProviderCustomer?: boolean },
 ): Promise<Customer> {
   const syncedCustomer = await syncCustomer(ctx.database, input);
   await ensureDefaultPlansForCustomer(ctx, syncedCustomer.id);
-  const { providerCustomer } = await upsertProviderCustomer(ctx, {
-    customerId: syncedCustomer.id,
-  });
 
-  return {
-    ...syncedCustomer,
-    provider: {
-      ...(syncedCustomer.provider ?? {}),
-      [ctx.provider.id]: providerCustomer,
-    },
-  };
+  if (input.upsertProviderCustomer) {
+    await upsertProviderCustomer(ctx, {
+      customerId: syncedCustomer.id,
+      customerRow: syncedCustomer,
+    });
+  }
+
+  return syncedCustomer;
 }
 
 export async function getCustomerById(
@@ -253,6 +251,7 @@ export async function getCustomerWithDetails(
 
   const subscriptionsByGroup = new Map<string, string[]>();
   for (const row of subRows) {
+    if (row.status === "scheduled") continue;
     const currentGroup = subscriptionsByGroup.get(row.planGroup) ?? [];
     currentGroup.push(row.planId);
     subscriptionsByGroup.set(row.planGroup, currentGroup);
@@ -369,11 +368,12 @@ function providerCustomerNeedsSync(
 
 export async function upsertProviderCustomer(
   ctx: PayKitContext,
-  input: { customerId: string },
+  input: { customerId: string; customerRow?: Customer },
 ): Promise<{ customerId: string; providerCustomer: ProviderCustomer; providerCustomerId: string }> {
   const providerId = ctx.provider.id;
 
-  const existingCustomer = await getCustomerByIdOrThrow(ctx.database, input.customerId);
+  const existingCustomer =
+    input.customerRow ?? (await getCustomerByIdOrThrow(ctx.database, input.customerId));
   const existingProviderCustomer = getProviderCustomer(existingCustomer, providerId);
   const existingProviderCustomerId = existingProviderCustomer?.id ?? null;
 

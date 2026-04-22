@@ -9,6 +9,7 @@ import {
   expectExactMeteredBalance,
   expectNoScheduledPlanInGroup,
   expectSingleActivePlanInGroup,
+  subscribeCustomer,
   type TestPayKit,
 } from "../setup";
 
@@ -29,11 +30,7 @@ describe("same-plan-noop: pro → pro", () => {
     customerId = customer.customerId;
 
     // Setup: subscribe to Pro
-    await t.paykit.subscribe({
-      customerId,
-      planId: "pro",
-      successUrl: "https://example.com/success",
-    });
+    await subscribeCustomer({ t, customerId, planId: "pro" });
   });
 
   afterAll(async () => {
@@ -64,11 +61,7 @@ describe("same-plan-noop: pro → pro", () => {
       const invoiceCountBefore = invoicesBeforeRows[0]?.count ?? 0;
 
       // Action: subscribe to same plan
-      await t.paykit.subscribe({
-        customerId,
-        planId: "pro",
-        successUrl: "https://example.com/success",
-      });
+      await subscribeCustomer({ t, customerId, planId: "pro" });
 
       // Same product ID (no new row created)
       const afterRows = await t.database

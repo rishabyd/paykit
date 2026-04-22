@@ -64,7 +64,7 @@ export const feature = pgTable("feature", {
   updatedAt,
 });
 
-type ProviderProductMap = Record<string, { productId: string; priceId: string | null }>;
+type ProviderProductMap = Record<string, Record<string, string>>;
 
 export const product = pgTable(
   "product",

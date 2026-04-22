@@ -1,7 +1,7 @@
 {
-  "name": "@paykitjs/stripe",
+  "name": "@paykitjs/polar",
   "version": "0.0.4-canary.0",
-  "description": "Stripe provider adapter for PayKit",
+  "description": "Polar provider adapter for PayKit",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -29,8 +29,8 @@
     "typecheck": "tsc --build"
   },
   "dependencies": {
-    "paykitjs": "workspace:*",
-    "stripe": "^19.1.0"
+    "@polar-sh/sdk": "^0.47.0",
+    "paykitjs": "workspace:*"
   },
   "devDependencies": {
     "tsdown": "^0.21.1",

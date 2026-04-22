@@ -8,6 +8,7 @@ import {
   expectNoScheduledPlanInGroup,
   expectProduct,
   expectSingleActivePlanInGroup,
+  subscribeCustomer,
   type TestPayKit,
 } from "../setup";
 
@@ -28,11 +29,7 @@ describe("upgrade-immediate: pro → ultra", () => {
     customerId = customer.customerId;
 
     // Setup: subscribe to Pro first
-    await t.paykit.subscribe({
-      customerId,
-      planId: "pro",
-      successUrl: "https://example.com/success",
-    });
+    await subscribeCustomer({ t, customerId, planId: "pro" });
   });
 
   afterAll(async () => {
@@ -41,11 +38,7 @@ describe("upgrade-immediate: pro → ultra", () => {
 
   it("upgrading to a higher tier activates it immediately and ends the old plan", async () => {
     try {
-      await t.paykit.subscribe({
-        customerId,
-        planId: "ultra",
-        successUrl: "https://example.com/success",
-      });
+      await subscribeCustomer({ t, customerId, planId: "ultra" });
 
       // Ultra is active with period dates
       await expectProduct({

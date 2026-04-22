@@ -5,6 +5,7 @@ import {
   createTestPayKit,
   dumpStateOnFailure,
   expectExactMeteredBalance,
+  subscribeCustomer,
   type TestPayKit,
 } from "../setup";
 
@@ -25,18 +26,10 @@ describe("stacked-metered: cross-group entitlement aggregation", () => {
     customerId = customer.customerId;
 
     // Pro (base group): 500 messages/month
-    await t.paykit.subscribe({
-      customerId,
-      planId: "pro",
-      successUrl: "https://example.com/success",
-    });
+    await subscribeCustomer({ t, customerId, planId: "pro" });
 
     // Extra Messages (addons group): 200 messages/month
-    await t.paykit.subscribe({
-      customerId,
-      planId: "extra_messages",
-      successUrl: "https://example.com/success",
-    });
+    await subscribeCustomer({ t, customerId, planId: "extra_messages" });
   });
 
   afterAll(async () => {

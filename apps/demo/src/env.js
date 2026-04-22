@@ -1,5 +1,5 @@
 import { createEnv } from "@t3-oss/env-nextjs";
-import { z } from "zod";
+import * as z from "zod";
 
 export const env = createEnv({
   /**
@@ -10,8 +10,10 @@ export const env = createEnv({
     APP_URL: z.string().url(),
     DATABASE_URL: z.string().min(1),
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-    STRIPE_SECRET_KEY: z.string().min(1),
-    STRIPE_WEBHOOK_SECRET: z.string().min(1),
+    STRIPE_SECRET_KEY: z.string().min(1).optional(),
+    STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
+    POLAR_ACCESS_TOKEN: z.string().min(1),
+    POLAR_WEBHOOK_SECRET: z.string().min(1),
     BETTER_AUTH_SECRET: z.string().min(1),
     AUTUMN_SECRET_KEY: z.string().min(1).optional(),
   },
@@ -35,6 +37,8 @@ export const env = createEnv({
     NODE_ENV: process.env.NODE_ENV,
     STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+    POLAR_ACCESS_TOKEN: process.env.POLAR_ACCESS_TOKEN,
+    POLAR_WEBHOOK_SECRET: process.env.POLAR_WEBHOOK_SECRET,
     BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
     AUTUMN_SECRET_KEY: process.env.AUTUMN_SECRET_KEY,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
