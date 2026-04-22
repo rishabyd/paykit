@@ -38,7 +38,7 @@ packages/
   paykit/       # Core orchestration package
   stripe/       # Stripe provider
   dash/         # Dashboard
-  better-auth/  # Better Auth plugin
+  polar/  # Polar provider
 apps/
   demo/         # Demo app
 landing/        # Next.js marketing site
@@ -86,7 +86,7 @@ docs: update README setup steps
 chore: bump pnpm to 10.4.1
 ```
 
-The scope is the **package name** (`paykit`, `stripe`, `dash`, `better-auth`).
+The scope is the **package name** (`paykit`, `stripe`, `dash`, `polar`).
 
 - PRs target `main`
 - For bug fixes or non-breaking improvements, a PR is enough
