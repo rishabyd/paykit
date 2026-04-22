@@ -14,6 +14,7 @@ export type SubscribeBody = z.infer<typeof subscribeBodySchema>;
 
 export type SubscribeInput = SubscribeBody & {
   customerId: string;
+  productInternalId?: string;
 };
 
 export interface SubscribeResult {

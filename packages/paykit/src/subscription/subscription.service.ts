@@ -8,13 +8,15 @@ import {
   upsertProviderCustomer,
 } from "../customer/customer.service";
 import type { PayKitDatabase } from "../database";
-import { entitlement, product, subscription } from "../database/schema";
+import { entitlement, feature, product, subscription } from "../database/schema";
 import { upsertInvoiceRecord } from "../invoice/invoice.service";
 import { getDefaultPaymentMethod } from "../payment-method/payment-method.service";
 import {
   getDefaultProductInGroup,
-  getLatestProduct,
-  getProductByProviderData,
+  getProductByHash,
+  getProductByInternalId,
+  getProductByProviderPriceId,
+  getProductFeatures,
   withProviderInfo,
 } from "../product/product.service";
 import type { ProviderRequiredAction, ProviderSubscription } from "../providers/provider";
@@ -70,29 +72,43 @@ export async function subscribeToPlan(
   });
 }
 
+async function resolveStoredPlanFeatures(
+  database: PayKitDatabase,
+  productInternalId: string,
+): Promise<readonly NormalizedPlanFeature[]> {
+  const stored = await getProductFeatures(database, productInternalId);
+  const featureIds = stored.map((f) => f.featureId);
+  const features =
+    featureIds.length > 0
+      ? await database.query.feature.findMany({
+          where: inArray(feature.id, featureIds),
+        })
+      : [];
+  const featureTypeMap = new Map(features.map((f) => [f.id, f.type]));
+  return stored.map((f) => ({
+    config: f.config,
+    id: f.featureId,
+    limit: f.limit,
+    resetInterval: f.resetInterval as NormalizedPlanFeature["resetInterval"],
+    type: (featureTypeMap.get(f.featureId) ?? "metered") as NormalizedPlanFeature["type"],
+  }));
+}
+
 export async function loadSubscribeContext(ctx: PayKitContext, input: SubscribeInput) {
   const providerId = ctx.provider.id;
   const normalizedPlan = ctx.plans.planMap.get(input.planId);
-  const latestProduct = await getLatestProduct(ctx.database, input.planId);
-  const storedPlan = latestProduct ? withProviderInfo(latestProduct, providerId) : null;
+  const matchingProduct = input.productInternalId
+    ? await getProductByInternalId(ctx.database, input.productInternalId)
+    : normalizedPlan
+      ? await getProductByHash(ctx.database, input.planId, normalizedPlan.hash)
+      : null;
+  const storedPlan = matchingProduct ? withProviderInfo(matchingProduct, providerId) : null;
 
-  if (!normalizedPlan || !storedPlan) {
+  if (!storedPlan) {
     throw PayKitError.from(
       "NOT_FOUND",
       PAYKIT_ERROR_CODES.PLAN_NOT_FOUND,
       `Plan "${input.planId}" not found`,
-    );
-  }
-
-  if (storedPlan.hash !== normalizedPlan.hash) {
-    ctx.logger.error(
-      { planId: input.planId },
-      `Plan "${input.planId}" is out of sync. Run \`paykitjs push\` to update.`,
-    );
-    throw PayKitError.from(
-      "INTERNAL_SERVER_ERROR",
-      PAYKIT_ERROR_CODES.PLAN_NOT_SYNCED,
-      `Plan "${input.planId}" schema has changed since last sync. Run \`paykitjs push\` to update.`,
     );
   }
 
@@ -137,6 +153,10 @@ export async function loadSubscribeContext(ctx: PayKitContext, input: SubscribeI
     hasProviderSubscription(activeSubscription) &&
     targetAmount > activeAmount;
 
+  const planFeatures = normalizedPlan
+    ? normalizedPlan.includes
+    : await resolveStoredPlanFeatures(ctx.database, storedPlan.internalId);
+
   return {
     activeSubscription,
     cancelUrl: input.cancelUrl,
@@ -145,6 +165,7 @@ export async function loadSubscribeContext(ctx: PayKitContext, input: SubscribeI
     isPaidTarget,
     isUpgrade,
     normalizedPlan,
+    planFeatures,
     providerCustomerId,
     providerId,
     scheduledSubscriptions,
@@ -288,6 +309,7 @@ export async function prepareSubscribeCheckoutCompleted(
 
   const customerId = event.payload.metadata?.paykit_customer_id;
   const planId = event.payload.metadata?.paykit_plan_id;
+  const productInternalId = event.payload.metadata?.paykit_product_internal_id;
   if (!customerId || !planId) {
     throw PayKitError.from(
       "BAD_REQUEST",
@@ -308,6 +330,7 @@ export async function prepareSubscribeCheckoutCompleted(
   const subCtx = await loadSubscribeContext(ctx, {
     customerId,
     planId,
+    productInternalId: productInternalId ?? undefined,
     successUrl: "https://paykit.invalid/checkout",
   });
   const checkoutProviderProduct = checkoutSubscription.providerProduct;
@@ -1045,6 +1068,7 @@ async function createCheckoutSubscribe(
       paykit_customer_id: subCtx.customerId,
       paykit_intent: "subscribe",
       paykit_plan_id: subCtx.storedPlan.id,
+      paykit_product_internal_id: subCtx.storedPlan.internalId,
     },
     providerCustomerId: subCtx.providerCustomerId,
     providerProduct: subCtx.storedPlan.providerProduct!,
@@ -1064,7 +1088,7 @@ async function insertLocalTargetSubscription(
 ): Promise<void> {
   await insertSubscriptionRecord(database, {
     customerId: subCtx.customerId,
-    planFeatures: subCtx.normalizedPlan.includes,
+    planFeatures: subCtx.planFeatures,
     productInternalId: subCtx.storedPlan.internalId,
     providerId: subCtx.providerId,
     startedAt: input.startedAt,
@@ -1109,7 +1133,7 @@ async function upsertProviderBackedTargetSubscription(
       currentPeriodEndAt: input.subscription.currentPeriodEndAt ?? null,
       currentPeriodStartAt: input.subscription.currentPeriodStartAt ?? null,
       customerId: subCtx.customerId,
-      planFeatures: subCtx.normalizedPlan.includes,
+      planFeatures: subCtx.planFeatures,
       productInternalId: subCtx.storedPlan.internalId,
       providerId: subCtx.providerId,
       providerData,

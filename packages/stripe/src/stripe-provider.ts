@@ -7,9 +7,21 @@ import type {
 } from "paykitjs";
 import StripeSdk from "stripe";
 
+/**
+ * Stripe API version PayKit is tested against. Users can override via
+ * `stripe({ apiVersion })`, e.g. to opt into preview features.
+ */
+export const PAYKIT_STRIPE_API_VERSION = "2025-10-29.clover";
+
+const STRIPE_MANAGED_PAYMENTS_MIN_VERSION = "2026-03-04.preview";
+
 export interface StripeOptions {
   secretKey: string;
   webhookSecret: string;
+  /** Override the Stripe API version (e.g. for preview features). */
+  apiVersion?: string;
+  /** Enable Stripe Managed Payments (requires a preview API version). */
+  managedPayments?: boolean;
 }
 
 type StripeInvoiceWithExtras = StripeSdk.Invoice & {
@@ -593,7 +605,9 @@ export function createStripeProvider(client: StripeSdk, options: StripeOptions):
     },
 
     async createSubscriptionCheckout(data) {
-      const sessionParams: StripeSdk.Checkout.SessionCreateParams = {
+      const sessionParams: StripeSdk.Checkout.SessionCreateParams & {
+        managed_payments?: { enabled: boolean };
+      } = {
         cancel_url: data.cancelUrl ?? data.successUrl,
         client_reference_id: data.providerCustomerId,
         customer: data.providerCustomerId,
@@ -602,6 +616,9 @@ export function createStripeProvider(client: StripeSdk, options: StripeOptions):
         mode: "subscription",
         success_url: data.successUrl,
       };
+      if (options.managedPayments) {
+        sessionParams.managed_payments = { enabled: true };
+      }
       const session = await client.checkout.sessions.create(sessionParams);
 
       if (!session.url) {
@@ -937,11 +954,25 @@ export function createStripeProvider(client: StripeSdk, options: StripeOptions):
 }
 
 export function stripe(options: StripeOptions): PayKitProviderConfig {
+  const apiVersion = options.apiVersion ?? PAYKIT_STRIPE_API_VERSION;
+  if (options.managedPayments) {
+    if (!apiVersion.endsWith(".preview") || apiVersion < STRIPE_MANAGED_PAYMENTS_MIN_VERSION) {
+      throw PayKitError.from(
+        "BAD_REQUEST",
+        PAYKIT_ERROR_CODES.PROVIDER_INVALID_CONFIG,
+        `managedPayments requires apiVersion >= ${STRIPE_MANAGED_PAYMENTS_MIN_VERSION} (got "${apiVersion}")`,
+      );
+    }
+  }
+  const client = new StripeSdk(options.secretKey, {
+    apiVersion: apiVersion as StripeSdk.LatestApiVersion,
+  });
+
   return {
     id: "stripe",
     name: "Stripe",
     createAdapter(): PaymentProvider {
-      return createStripeProvider(new StripeSdk(options.secretKey), options);
+      return createStripeProvider(client, options);
     },
   };
 }

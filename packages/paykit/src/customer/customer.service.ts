@@ -11,7 +11,7 @@ import {
   product,
   subscription,
 } from "../database/schema";
-import { getLatestProduct } from "../product/product.service";
+import { getProductByHash } from "../product/product.service";
 import type { ProviderCustomer, ProviderCustomerMap } from "../providers/provider";
 import {
   getActiveSubscriptionInGroup,
@@ -26,6 +26,12 @@ import type {
   CustomerWithDetails,
   ListCustomersResult,
 } from "./customer.types";
+
+function stableStringify(value: Record<string, string> | null | undefined): string {
+  if (value == null) return "null";
+  const sorted = Object.keys(value).sort();
+  return JSON.stringify(value, sorted);
+}
 
 function appendEntitlement(
   entitlements: Record<string, CustomerEntitlement>,
@@ -153,7 +159,7 @@ export async function ensureDefaultPlansForCustomer(
       continue;
     }
 
-    const storedPlan = await getLatestProduct(ctx.database, defaultPlan.id);
+    const storedPlan = await getProductByHash(ctx.database, defaultPlan.id, defaultPlan.hash);
     if (!storedPlan) {
       continue;
     }
@@ -348,8 +354,8 @@ function providerCustomerNeedsSync(
 ): boolean {
   if ((existing.syncedEmail ?? null) !== (customer.email ?? null)) return true;
   if ((existing.syncedName ?? null) !== (customer.name ?? null)) return true;
-  const existingMeta = JSON.stringify(existing.syncedMetadata ?? null);
-  const currentMeta = JSON.stringify(customer.metadata ?? null);
+  const existingMeta = stableStringify(existing.syncedMetadata);
+  const currentMeta = stableStringify(customer.metadata);
   return existingMeta !== currentMeta;
 }
 
