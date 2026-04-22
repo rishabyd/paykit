@@ -336,9 +336,11 @@ export async function prepareSubscribeCheckoutCompleted(
   const checkoutProviderProduct = checkoutSubscription.providerProduct;
   const storedProviderProduct = subCtx.storedPlan.providerProduct;
   if (checkoutProviderProduct && storedProviderProduct) {
-    const mismatch = Object.entries(checkoutProviderProduct).some(
-      ([key, value]) => storedProviderProduct[key] !== value,
-    );
+    const checkoutKeys = Object.keys(checkoutProviderProduct);
+    const storedKeys = Object.keys(storedProviderProduct);
+    const mismatch =
+      checkoutKeys.length !== storedKeys.length ||
+      checkoutKeys.some((key) => checkoutProviderProduct[key] !== storedProviderProduct[key]);
     if (mismatch) {
       throw PayKitError.from(
         "BAD_REQUEST",
@@ -1252,6 +1254,7 @@ function mapJoinRowToSubscriptionWithCatalog(row: {
   product: typeof product.$inferSelect;
 }): SubscriptionWithCatalog {
   const providerMap = row.product.provider as ProviderProductMap | null;
+  const providerId = row.subscription.providerId;
   return {
     ...row.subscription,
     planGroup: row.product.group,
@@ -1260,7 +1263,7 @@ function mapJoinRowToSubscriptionWithCatalog(row: {
     planName: row.product.name,
     priceAmount: row.product.priceAmount,
     priceInterval: row.product.priceInterval,
-    providerProduct: Object.values(providerMap ?? {})[0] ?? null,
+    providerProduct: (providerId ? providerMap?.[providerId] : null) ?? null,
   };
 }
 

@@ -191,17 +191,17 @@ export async function syncProducts(ctx: PayKitContext): Promise<SyncProductResul
     const requestedIds = new Set(paidPlansToSync.map((p) => p.id));
     const returnedIds = new Set(providerResults.results.map((r) => r.id));
     const missingIds = [...requestedIds].filter((id) => !returnedIds.has(id));
-    if (missingIds.length > 0) {
-      throw new Error(
-        `Provider syncProducts did not return mappings for: ${missingIds.join(", ")}`,
+    if (missingIds.length > 0 || returnedIds.size !== requestedIds.size) {
+      throw PayKitError.from(
+        "INTERNAL_SERVER_ERROR",
+        PAYKIT_ERROR_CODES.PLAN_SYNC_FAILED,
+        `Provider syncProducts returned invalid mapping: missing=[${missingIds.join(", ")}], expected=${String(requestedIds.size)}, got=${String(returnedIds.size)}`,
       );
     }
 
     for (const providerResult of providerResults.results) {
       const plan = paidPlansToSync.find((p) => p.id === providerResult.id);
-      if (!plan) {
-        throw new Error(`Provider syncProducts returned unknown product id: ${providerResult.id}`);
-      }
+      if (!plan) continue;
       await upsertProviderProduct(ctx.database, {
         productInternalId: plan.storedProductInternalId,
         providerId,

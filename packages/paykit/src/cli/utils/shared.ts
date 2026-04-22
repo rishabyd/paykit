@@ -161,9 +161,11 @@ export async function checkProviderCustomers(
   const hasUnmanaged = customerSample.some((s) => !s.paykitCustomerId);
   if (hasUnmanaged) return [message];
 
-  const paykitIds = customerSample
-    .map((s) => s.paykitCustomerId)
-    .filter((id): id is string => id !== null);
+  const paykitIds = [
+    ...new Set(
+      customerSample.map((s) => s.paykitCustomerId).filter((id): id is string => id !== null),
+    ),
+  ];
 
   if (paykitIds.length > 0) {
     const { customer } = await import("../../database/schema");
@@ -199,7 +201,7 @@ export async function checkActiveSubscriptionsOnOtherProvider(
   for (const row of rows) {
     if (row.count > 0 && row.providerId) {
       errors.push(
-        `Found ${String(row.count)} active subscription${row.count === 1 ? "" : "s"} linked to "${row.providerId}" but current provider is "${currentProviderId}". Existing subscriptions must be canceled before switching providers.`,
+        `Found ${String(row.count)} subscription${row.count === 1 ? "" : "s"} (active, trialing, or past_due) linked to "${row.providerId}" but current provider is "${currentProviderId}". Existing subscriptions must be canceled before switching providers.`,
       );
     }
   }

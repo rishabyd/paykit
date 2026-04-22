@@ -157,7 +157,7 @@ describe("providers/stripe", () => {
         cancelUrl: "https://example.com/cancel",
         metadata: {},
         providerCustomerId: "cus_123",
-        providerPriceId: "price_123",
+        providerProduct: { priceId: "price_123" },
         successUrl: "https://example.com/success",
       });
 
@@ -176,7 +176,7 @@ describe("providers/stripe", () => {
         cancelUrl: "https://example.com/cancel",
         metadata: {},
         providerCustomerId: "cus_123",
-        providerPriceId: "price_123",
+        providerProduct: { priceId: "price_123" },
         successUrl: "https://example.com/success",
       });
 

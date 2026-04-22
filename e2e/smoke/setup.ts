@@ -192,7 +192,7 @@ export async function createTestPayKit(): Promise<TestPayKit> {
   // 4. Start webhook server BEFORE syncing products — product sync
   // creates provider products which fires webhooks immediately
   const webhookRequests: CapturedWebhookRequest[] = [];
-  const server = startWebhookServer(paykit, webhookRequests);
+  const server = await startWebhookServer(paykit, webhookRequests);
 
   // 5. Sync products to provider
   await syncProducts(ctx);
@@ -604,10 +604,10 @@ export async function expectExactMeteredBalance(input: {
   }
 }
 
-function startWebhookServer(
+async function startWebhookServer(
   paykit: Pick<SmokePayKit, "handler">,
   webhookRequests: CapturedWebhookRequest[],
-): Server {
+): Promise<Server> {
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const chunks: Buffer[] = [];
     for await (const chunk of req) {
@@ -644,7 +644,10 @@ function startWebhookServer(
     }
   });
 
-  server.listen(WEBHOOK_PORT);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(WEBHOOK_PORT, () => resolve());
+  });
   return server;
 }
 
