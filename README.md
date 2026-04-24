@@ -27,7 +27,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/paykitjs"><img src="https://img.shields.io/npm/v/paykitjs?style=flat-square&color=cb3837" alt="npm version"></a>
   <a href="https://github.com/getpaykit/paykit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/getpaykit/paykit?style=flat-square&color=blue" alt="License"></a>
-  <a href="https://www.npmjs.com/package/paykitjs"><img src="https://img.shields.io/npm/dt/paykitjs?style=flat-square&color=b8860b" alt="npm downloads"></a>
+  <a href="https://www.npmjs.com/package/paykitjs"><img src="https://img.shields.io/npm/dt/paykitjs?style=flat-square&color=f07d3e" alt="npm downloads"></a>
 </p>
 
 ---
