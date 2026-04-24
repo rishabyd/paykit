@@ -1,3 +1,5 @@
+<br>
+
 <p align="center">
   <a name="readme-top"></a>
   <a href="https://paykit.sh">
@@ -9,10 +11,10 @@
   </a>
 </p>
 
-<h3 align="center">The first billing framework for TypeScript</h3>
+<h3 align="center">The billing framework for TypeScript</h3>
 
 <p align="center">
-  Define plans in code. Sync with Stripe. Gate features. Track usage.
+  Define products in code. Any provider. Gate features. Track usage.
 </p>
 
 <p align="center">
